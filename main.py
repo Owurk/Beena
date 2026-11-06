@@ -1,0 +1,495 @@
+import math
+import os
+import sys
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import List, Optional
+
+import cv2
+import numpy as np
+
+from capture import Capture
+from motion_detector import MotionConfig, MotionDetector
+from yolo_detector import Detection, YoloConfig, YoloDetector
+
+
+USAGE = (
+    "Usage: main.py [pixelThreshold] [minChangedRatio] "
+    "[confidenceThreshold] [yoloInterval] [cameraIndex]\n"
+    "  pixelThreshold     : 1..255  (default 25)\n"
+    "  minChangedRatio    : 0..1    (default 0.002)\n"
+    "  confidenceThreshold: 0..1    (default 0.5)\n"
+    "  yoloInterval       : 1..1000 (default 10)\n"
+    "  cameraIndex        : 0..10   (default 0)\n"
+    "  --no-show          : run headless (no preview window)\n"
+)
+
+
+def _parse_float(
+    text: str,
+    minimum: float,
+    maximum: float
+) -> Optional[float]:
+
+    if text is None or text == "":
+        return None
+
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+
+    if not math.isfinite(value):
+        return None
+
+    if value < minimum or value > maximum:
+        return None
+
+    return value
+
+
+def _parse_int(
+    text: str,
+    minimum: int,
+    maximum: int
+) -> Optional[int]:
+
+    if text is None or text == "":
+        return None
+
+    try:
+        value = int(text, 10)
+    except ValueError:
+        return None
+
+    if value < minimum or value > maximum:
+        return None
+
+    return value
+
+
+_PERSON_OR_ANIMAL_CLASSES = frozenset({
+    "person",
+    "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe",
+})
+
+
+def _is_person_or_animal(class_name: str) -> bool:
+    return class_name in _PERSON_OR_ANIMAL_CLASSES
+
+
+def _make_snapshot_timestamp() -> str:
+    return time.strftime("%Y%m%d_%H%M%S")
+
+
+def _build_snapshot_path(directory: str) -> str:
+    timestamp = _make_snapshot_timestamp()
+
+    path = os.path.join(
+        directory,
+        f"detect_{timestamp}.jpg"
+    )
+
+    counter = 1
+
+    while os.path.exists(path):
+        path = os.path.join(
+            directory,
+            f"detect_{timestamp}_{counter}.jpg"
+        )
+        counter += 1
+
+    return path
+
+
+def _save_snapshot(
+    directory: str,
+    frame: np.ndarray,
+    detections: List[Detection]
+) -> bool:
+
+    annotated = frame.copy()
+
+    for d in detections:
+
+        cv2.rectangle(
+            annotated,
+            d.box,
+            (0, 255, 0),
+            2
+        )
+
+        label = f"{d.class_name} {d.confidence:.2f}"
+
+        (text_width, text_height), _baseline = cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            2
+        )
+
+        label_x = d.box[0]
+        label_y = d.box[1] - 10
+
+        if label_y < text_height:
+            label_y = d.box[3] + text_height + 5
+
+        cv2.putText(
+            annotated,
+            label,
+            (label_x, label_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2
+        )
+
+    path = _build_snapshot_path(directory)
+
+    if not cv2.imwrite(path, annotated):
+        print(
+            f"Failed to write snapshot: {path}",
+            file=sys.stderr
+        )
+        return False
+
+    print(f"Snapshot saved: {path}")
+    return True
+
+
+def main(argv: List[str]) -> int:
+
+    show = "--no-show" not in argv
+    positional = [a for a in argv if a != "--no-show"]
+
+    motion_config = MotionConfig()
+    yolo_config = YoloConfig()
+
+    yolo_interval = 10
+    camera_index = 0
+
+    if len(positional) == 0:
+        print(USAGE, end="")
+
+    if len(positional) > 0:
+        value = _parse_int(positional[0], 1, 255)
+
+        if value is None:
+            print(
+                f"Invalid pixelThreshold (expected 1..255): {positional[0]}",
+                file=sys.stderr
+            )
+            return 1
+
+        motion_config.pixel_threshold = value
+
+    if len(positional) > 1:
+        value = _parse_float(positional[1], 0.0, 1.0)
+
+        if value is None:
+            print(
+                f"Invalid minChangedRatio (expected 0..1): {positional[1]}",
+                file=sys.stderr
+            )
+            return 1
+
+        motion_config.min_changed_ratio = value
+
+    if len(positional) > 2:
+        value = _parse_float(positional[2], 0.0, 1.0)
+
+        if value is None:
+            print(
+                f"Invalid confidenceThreshold (expected 0..1): {positional[2]}",
+                file=sys.stderr
+            )
+            return 1
+
+        yolo_config.confidence_threshold = value
+
+    if len(positional) > 3:
+        value = _parse_int(positional[3], 1, 1000)
+
+        if value is None:
+            print(
+                f"Invalid yoloInterval (expected 1..1000): {positional[3]}",
+                file=sys.stderr
+            )
+            return 1
+
+        yolo_interval = value
+
+    if len(positional) > 4:
+        value = _parse_int(positional[4], 0, 10)
+
+        if value is None:
+            print(
+                f"Invalid cameraIndex (expected 0..10): {positional[4]}",
+                file=sys.stderr
+            )
+            return 1
+
+        camera_index = value
+
+    snapshot_dir = "snapshots"
+
+    try:
+        os.makedirs(snapshot_dir, exist_ok=True)
+
+    except OSError as e:
+        print(
+            f"Failed to create snapshots directory: {e}",
+            file=sys.stderr
+        )
+        return 1
+
+    motion_detector = MotionDetector(motion_config)
+
+    yolo_detector = YoloDetector(yolo_config)
+
+    if not yolo_detector.load():
+        return 1
+
+    window_name = "Webcam"
+
+    if show:
+        cv2.namedWindow(window_name)
+
+    max_consecutive_failures = 5
+    retry_delay = 0.030
+
+    camera = Capture(camera_index)
+
+    if not camera.open():
+        return 1
+
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    yolo_future: Optional[Future] = None
+    pending_yolo_frame: Optional[np.ndarray] = None
+
+    consecutive_failures = 0
+    frame_counter = 0
+
+    snapshot_cooldown = 5.0
+
+    last_snapshot_time = (
+        time.monotonic() - snapshot_cooldown
+    )
+
+    ok = True
+
+    try:
+
+        while True:
+
+            frame = camera.read()
+
+            if frame is None or frame.size == 0:
+
+                consecutive_failures += 1
+
+                if consecutive_failures >= max_consecutive_failures:
+
+                    print(
+                        f"Stream lost after {consecutive_failures} "
+                        "consecutive failed reads.",
+                        file=sys.stderr
+                    )
+
+                    ok = False
+                    break
+
+                time.sleep(retry_delay)
+                continue
+
+            consecutive_failures = 0
+
+            if yolo_future is not None and yolo_future.done():
+
+                try:
+                    detections = yolo_future.result()
+
+                except Exception as e:
+
+                    print(
+                        f"YOLO inference failed: {e}",
+                        file=sys.stderr
+                    )
+
+                    detections = []
+
+                person_or_animal_present = any(
+                    _is_person_or_animal(d.class_name)
+                    for d in detections
+                )
+
+                current_time = time.monotonic()
+
+                if (
+                    pending_yolo_frame is not None
+                    and person_or_animal_present
+                    and current_time - last_snapshot_time >= snapshot_cooldown
+                ):
+
+                    saved = _save_snapshot(
+                        snapshot_dir,
+                        pending_yolo_frame,
+                        detections
+                    )
+
+                    if saved:
+                        last_snapshot_time = current_time
+
+                yolo_future = None
+                pending_yolo_frame = None
+
+            motion = motion_detector.detect(frame)
+
+            if motion:
+
+                frame_counter += 1
+
+                if (
+                    frame_counter >= yolo_interval
+                    and yolo_future is None
+                ):
+
+                    frame_counter = 0
+
+                    yolo_frame = frame.copy()
+
+                    try:
+
+                        pending_yolo_frame = yolo_frame
+
+                        yolo_future = executor.submit(
+                            yolo_detector.detect,
+                            yolo_frame
+                        )
+
+                    except Exception as e:
+
+                        print(
+                            f"Failed to launch async YOLO: {e}",
+                            file=sys.stderr
+                        )
+
+                        yolo_future = None
+                        pending_yolo_frame = None
+
+            text_color = (
+                (0, 0, 255) if motion else (0, 255, 0)
+            )
+
+            ratio_text = (
+                f"Ratio: {motion_detector.get_last_ratio():.4f}"
+            )
+
+            text = (
+                "Motion: TRUE" if motion else "Motion: FALSE"
+            )
+
+            cv2.putText(
+                frame,
+                text,
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                text_color,
+                2
+            )
+
+            cv2.putText(
+                frame,
+                ratio_text,
+                (20, 75),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                text_color,
+                2
+            )
+
+            threshold_text = (
+                f"Threshold: "
+                f"{motion_detector.get_config().min_changed_ratio:.4f}"
+            )
+
+            cv2.putText(
+                frame,
+                threshold_text,
+                (20, 110),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                text_color,
+                2
+            )
+
+            conf_text = (
+                f"Conf: {yolo_detector.get_confidence_threshold():.2f}"
+            )
+
+            cv2.putText(
+                frame,
+                conf_text,
+                (20, 145),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                text_color,
+                2
+            )
+
+            cam_text = f"Cam: {camera_index}"
+
+            cv2.putText(
+                frame,
+                cam_text,
+                (20, 180),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                text_color,
+                2
+            )
+
+            if show:
+
+                cv2.imshow(window_name, frame)
+
+                if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                    break
+
+            else:
+                time.sleep(0.001)
+
+    finally:
+
+        if yolo_future is not None:
+
+            try:
+                yolo_future.result()
+
+            except Exception as e:
+
+                print(
+                    f"YOLO inference failed at shutdown: {e}",
+                    file=sys.stderr
+                )
+
+        executor.shutdown(wait=True)
+
+        camera.release()
+
+        if show:
+            cv2.destroyWindow(window_name)
+
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+
+    try:
+        sys.exit(main(sys.argv[1:]))
+
+    except KeyboardInterrupt:
+        sys.exit(130)
