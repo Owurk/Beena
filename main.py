@@ -15,13 +15,15 @@ from yolo_detector import Detection, YoloConfig, YoloDetector
 
 USAGE = (
     "Usage: main.py [pixelThreshold] [minChangedRatio] "
-    "[confidenceThreshold] [yoloInterval] [cameraIndex]\n"
-    "  pixelThreshold     : 1..255  (default 25)\n"
-    "  minChangedRatio    : 0..1    (default 0.002)\n"
-    "  confidenceThreshold: 0..1    (default 0.5)\n"
-    "  yoloInterval       : 1..1000 (default 10)\n"
-    "  cameraIndex        : 0..10   (default 0)\n"
-    "  --no-show          : run headless (no preview window)\n"
+    "[confidenceThreshold] [yoloInterval] [cameraIndex] "
+    "[--source VIDEO_OR_RTSP_URL] [--no-show]\n"
+    "  pixelThreshold      : 1..255  (default 25)\n"
+    "  minChangedRatio     : 0..1    (default 0.002)\n"
+    "  confidenceThreshold : 0..1    (default 0.5)\n"
+    "  yoloInterval        : 1..1000 (default 10)\n"
+    "  cameraIndex         : 0..10   (default 0)\n"
+    "  --source            : video file or RTSP URL\n"
+    "  --no-show           : run headless\n"
 )
 
 
@@ -161,7 +163,21 @@ def _save_snapshot(
 def main(argv: List[str]) -> int:
 
     show = "--no-show" not in argv
-    positional = [a for a in argv if a != "--no-show"]
+
+    args = argv.copy()
+    source = None
+
+    if "--source" in args:
+        index = args.index("--source")
+
+        if index + 1 >= len(args):
+            print("--source requires a video path or RTSP URL", file=sys.stderr)
+            return 1
+
+        source = args[index + 1]
+        del args[index:index + 2]
+
+    positional = [a for a in args if a != "--no-show"]
 
     motion_config = MotionConfig()
     yolo_config = YoloConfig()
@@ -253,16 +269,43 @@ def main(argv: List[str]) -> int:
 
     window_name = "Webcam"
 
+    window_initialized = False
+
     if show:
-        cv2.namedWindow(window_name)
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     max_consecutive_failures = 5
     retry_delay = 0.030
 
-    camera = Capture(camera_index)
+    if source is not None:
+        camera = Capture(source)
+    else:
+        camera = Capture(camera_index)
 
     if not camera.open():
         return 1
+
+    is_video_file = (
+        source is not None
+        and not source.lower().startswith(("rtsp://", "rtsps://"))
+    )
+
+    if is_video_file:
+
+        fps = camera._cap.get(cv2.CAP_PROP_FPS)
+
+        if not math.isfinite(fps) or fps <= 0:
+            print(
+                "Could not determine video FPS. Using 30 FPS.",
+                file=sys.stderr
+            )
+            fps = 30.0
+
+        frame_delay = 1.0 / fps
+
+        next_frame_time = time.monotonic()
+
+        print(f"Video FPS: {fps:.2f}")
 
     executor = ThreadPoolExecutor(max_workers=1)
 
@@ -280,7 +323,7 @@ def main(argv: List[str]) -> int:
 
     ok = True
 
-    try:
+    try:    
 
         while True:
 
@@ -456,11 +499,26 @@ def main(argv: List[str]) -> int:
 
                 cv2.imshow(window_name, frame)
 
+                if not window_initialized:
+                    cv2.resizeWindow(window_name, 1280, 720)
+                    window_initialized = True
+
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
 
-            else:
-                time.sleep(0.001)
+            # Synchronize prerecorded video playback.
+            if is_video_file:
+
+                next_frame_time += frame_delay
+
+                now = time.monotonic()
+
+                if now < next_frame_time:
+                    time.sleep(next_frame_time - now)
+                else:
+                    # Avoid accumulating timing delays.
+                    next_frame_time = now
+
 
     finally:
 

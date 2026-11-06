@@ -7,18 +7,18 @@ import numpy as np
 
 class Capture:
 
-    def __init__(self, index: int = 0) -> None:
+    def __init__(self, source: int | str = 0) -> None:
         self._cap = cv2.VideoCapture()
-        self._camera_index = index
+        self._source = source
 
     def open(self) -> bool:
         """Open the webcam. Returns ``True`` on success."""
         if self.is_opened():
             return True
 
-        self._cap.open(self._camera_index)
+        self._cap.open(self._source)
         if not self._cap.isOpened():
-            print("Could not open webcam!", file=sys.stderr)
+            print("Could not open video source!", file=sys.stderr)
             return False
         return True
 
@@ -41,5 +41,5 @@ class Capture:
             self._cap.release()
 
     def is_opened(self) -> bool:
-        """Return whether the camera is open."""
+        """Return whether the source is open."""
         return self._cap.isOpened()
