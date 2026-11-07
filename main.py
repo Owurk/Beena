@@ -27,11 +27,7 @@ USAGE = (
 )
 
 
-def _parse_float(
-    text: str,
-    minimum: float,
-    maximum: float
-) -> Optional[float]:
+def _parse_float(text: str,minimum: float,maximum: float) -> Optional[float]:
 
     if text is None or text == "":
         return None
@@ -50,11 +46,7 @@ def _parse_float(
     return value
 
 
-def _parse_int(
-    text: str,
-    minimum: int,
-    maximum: int
-) -> Optional[int]:
+def _parse_int(text: str,minimum: int,maximum: int) -> Optional[int]:
 
     if text is None or text == "":
         return None
@@ -105,11 +97,7 @@ def _build_snapshot_path(directory: str) -> str:
     return path
 
 
-def _save_snapshot(
-    directory: str,
-    frame: np.ndarray,
-    detections: List[Detection]
-) -> bool:
+def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection]) -> bool:
 
     annotated = frame.copy()
 
@@ -331,6 +319,10 @@ def main(argv: List[str]) -> int:
 
             if frame is None or frame.size == 0:
 
+                if is_video_file:
+                    print("Video playback completed.")
+                    break
+
                 consecutive_failures += 1
 
                 if consecutive_failures >= max_consecutive_failures:
@@ -506,7 +498,7 @@ def main(argv: List[str]) -> int:
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
 
-            # Synchronize prerecorded video playback.
+       
             if is_video_file:
 
                 next_frame_time += frame_delay
@@ -516,7 +508,7 @@ def main(argv: List[str]) -> int:
                 if now < next_frame_time:
                     time.sleep(next_frame_time - now)
                 else:
-                    # Avoid accumulating timing delays.
+                  
                     next_frame_time = now
 
 
