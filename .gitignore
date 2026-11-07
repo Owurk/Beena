@@ -3,3 +3,4 @@ snapshots/
 target/
 *.mp4
 .env
+.vscode/
