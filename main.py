@@ -2,6 +2,8 @@ import math
 import os
 import sys
 import time
+import json
+import urllib.request
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional
 
@@ -26,6 +28,8 @@ USAGE = (
     "  --no-show           : run headless\n"
 )
 
+# Local Bina Core endpoint for snapshot event notifications.
+BINA_CORE_URL = "http://127.0.0.1:8080/snapshot"
 
 def _parse_float(text: str,minimum: float,maximum: float) -> Optional[float]:
 
@@ -96,8 +100,43 @@ def _build_snapshot_path(directory: str) -> str:
 
     return path
 
+def send_snapshot_event(snapshot_path: str) -> bool:
+    """Notify Bina Core that a snapshot has been successfully saved.
 
-def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection]) -> bool:
+    Sends the snapshot's absolute file path and event metadata
+    to the local HTTP server. Returns True if the server accepts
+    the event, otherwise False.
+    """
+
+    payload = {
+        "event": "snapshot_saved",
+        "image_path": os.path.abspath(snapshot_path),
+        "timestamp": _make_snapshot_timestamp()
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        BINA_CORE_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            print(f"Rust notification status: {response.status}")
+            return response.status == 202
+
+    except Exception as e:
+        print(f"Failed to notify Rust: {e}", file=sys.stderr)
+        return False
+
+def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection]) -> str | None:
+    """Save an annotated frame and return its path on success.
+
+    Returns None if the snapshot cannot be written.
+    """
 
     annotated = frame.copy()
 
@@ -142,10 +181,11 @@ def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection])
             f"Failed to write snapshot: {path}",
             file=sys.stderr
         )
-        return False
+        return None
 
     print(f"Snapshot saved: {path}")
-    return True
+
+    return path
 
 
 def main(argv: List[str]) -> int:
@@ -295,7 +335,10 @@ def main(argv: List[str]) -> int:
 
         print(f"Video FPS: {fps:.2f}")
 
+    # Dedicated worker pools keep YOLO inference and HTTP notifications
+        # from blocking the main camera-processing loop.
     executor = ThreadPoolExecutor(max_workers=1)
+    event_executor = ThreadPoolExecutor(max_workers=1)
 
     yolo_future: Optional[Future] = None
     pending_yolo_frame: Optional[np.ndarray] = None
@@ -368,14 +411,24 @@ def main(argv: List[str]) -> int:
                     and current_time - last_snapshot_time >= snapshot_cooldown
                 ):
 
-                    saved = _save_snapshot(
+                    # Save the annotated frame and notify Bina Core only after
+                    # the snapshot has been successfully written.
+                    snapshot_path = _save_snapshot(
                         snapshot_dir,
                         pending_yolo_frame,
                         detections
                     )
 
-                    if saved:
+                    if snapshot_path is not None:
+
                         last_snapshot_time = current_time
+
+                        # Dispatch the HTTP notification asynchronously so network
+                        # latency does not interrupt camera processing.
+                        event_executor.submit(
+                            send_snapshot_event,
+                            snapshot_path
+                        )
 
                 yolo_future = None
                 pending_yolo_frame = None
@@ -527,6 +580,7 @@ def main(argv: List[str]) -> int:
                 )
 
         executor.shutdown(wait=True)
+        event_executor.shutdown(wait=True)
 
         camera.release()
 
