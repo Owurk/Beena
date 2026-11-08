@@ -4,3 +4,4 @@ target/
 *.mp4
 .env
 .vscode/
+.ruff_cache/
