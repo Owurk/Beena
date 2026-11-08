@@ -6,6 +6,8 @@ import json
 import urllib.request
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional
+from datetime import datetime
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -30,6 +32,14 @@ USAGE = (
 
 # Local Bina Core endpoint for snapshot event notifications.
 BINA_CORE_URL = "http://127.0.0.1:8080/snapshot"
+
+
+
+def get_camera_name(source) -> str:
+    if source is None:
+        return "Webcam"
+
+    return os.path.basename(source)
 
 
 def _parse_float(text: str, minimum: float, maximum: float) -> Optional[float]:
@@ -89,24 +99,27 @@ def _is_person_or_animal(class_name: str) -> bool:
 
 
 def _make_snapshot_timestamp() -> str:
-    return time.strftime("%Y%m%d_%H%M%S")
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _build_snapshot_path(directory: str) -> str:
-    timestamp = _make_snapshot_timestamp()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     path = os.path.join(directory, f"detect_{timestamp}.jpg")
 
     counter = 1
 
     while os.path.exists(path):
-        path = os.path.join(directory, f"detect_{timestamp}_{counter}.jpg")
+        path = os.path.join(
+            directory,
+            f"detect_{timestamp}_{counter}.jpg"
+        )
         counter += 1
 
     return path
 
 
-def send_snapshot_event(snapshot_path: str) -> bool:
+def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_name: str,timestamp: str,shared_storage_root : str) -> bool:
     """Notify Bina Core that a snapshot has been successfully saved.
 
     Sends the snapshot's absolute file path and event metadata
@@ -114,10 +127,27 @@ def send_snapshot_event(snapshot_path: str) -> bool:
     the event, otherwise False.
     """
 
+    valid_detections = [
+        d for d in detections
+        if _is_person_or_animal(d.class_name)
+    ]
+
+    if not valid_detections:
+        return False
+
+    primary_detection = max(
+        valid_detections,
+        key=lambda d: d.confidence
+    )
+
     payload = {
+        "event_id": str(uuid4()),
         "event": "snapshot_saved",
-        "image_path": os.path.abspath(snapshot_path),
-        "timestamp": _make_snapshot_timestamp(),
+        "image_path": os.path.relpath(snapshot_path,shared_storage_root).replace("\\", "/"),
+        "timestamp": timestamp,
+        "detected_class": primary_detection.class_name,
+        "confidence": float(primary_detection.confidence),
+        "camera_name": camera_name,
     }
 
     data = json.dumps(payload).encode("utf-8")
@@ -273,7 +303,15 @@ def main(argv: List[str]) -> int:
 
         camera_index = value
 
-    snapshot_dir = "snapshots"
+    # Determine the camera/source name for event metadata.
+    camera_name = get_camera_name(source) if source is not None else "Webcam"
+
+    SHARED_STORAGE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)),"shared")
+
+    snapshot_dir = os.path.join(
+        SHARED_STORAGE_ROOT,
+        "snapshots"
+    )
 
     try:
         os.makedirs(snapshot_dir, exist_ok=True)
@@ -398,7 +436,16 @@ def main(argv: List[str]) -> int:
 
                         # Dispatch the HTTP notification asynchronously so network
                         # latency does not interrupt camera processing.
-                        event_executor.submit(send_snapshot_event, snapshot_path)
+                        event_timestamp = _make_snapshot_timestamp()
+
+                        event_executor.submit(
+                            send_snapshot_event,
+                            snapshot_path,
+                            detections,
+                            camera_name,
+                            event_timestamp,
+                            SHARED_STORAGE_ROOT
+                        )
 
                 yolo_future = None
                 pending_yolo_frame = None
