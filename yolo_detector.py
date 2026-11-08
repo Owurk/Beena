@@ -1,4 +1,3 @@
-
 import sys
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -25,9 +24,7 @@ class Detection:
     box: Tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
-_ALLOWED_CLASS_IDS = frozenset({
-    0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23
-})
+_ALLOWED_CLASS_IDS = frozenset({0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23})
 
 
 def _is_allowed_class(class_id: int) -> bool:
@@ -35,7 +32,6 @@ def _is_allowed_class(class_id: int) -> bool:
 
 
 class YoloDetector:
-
     def __init__(self, cfg: Optional[YoloConfig] = None) -> None:
         self._cfg = cfg if cfg is not None else YoloConfig()
         self._session = None
@@ -47,8 +43,7 @@ class YoloDetector:
     def load(self) -> bool:
         try:
             self._session = ort.InferenceSession(
-                self._cfg.model_path,
-                providers=["CPUExecutionProvider"]
+                self._cfg.model_path, providers=["CPUExecutionProvider"]
             )
         except Exception as e:
             print(f"Failed to load ONNX model: {e}", file=sys.stderr)
@@ -68,13 +63,11 @@ class YoloDetector:
 
         try:
             with open(self._cfg.classes_path, "r", encoding="utf-8") as f:
-                self._class_names = [
-                    line.strip() for line in f if line.strip()
-                ]
+                self._class_names = [line.strip() for line in f if line.strip()]
         except OSError:
             print(
                 f"Could not open classes file: {self._cfg.classes_path}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             self._loaded = False
             return False
@@ -94,20 +87,14 @@ class YoloDetector:
         blob = self._preprocess(frame)
 
         try:
-            outputs = self._session.run(
-                [self._output_name],
-                {self._input_name: blob}
-            )
+            outputs = self._session.run([self._output_name], {self._input_name: blob})
         except Exception as e:
             print(f"ONNX inference failed: {e}", file=sys.stderr)
             return []
 
         output = outputs[0]
 
-        return self._postprocess(
-            output,
-            (frame.shape[1], frame.shape[0])
-        )
+        return self._postprocess(output, (frame.shape[1], frame.shape[0]))
 
     def has_person_or_animal(self, frame: np.ndarray) -> bool:
         return len(self.detect(frame)) > 0
@@ -133,13 +120,11 @@ class YoloDetector:
             0.0,
             swapRB=True,
             crop=False,
-            ddepth=cv2.CV_32F
+            ddepth=cv2.CV_32F,
         )
 
     def _postprocess(
-        self,
-        output: np.ndarray,
-        original_size: Tuple[int, int]
+        self, output: np.ndarray, original_size: Tuple[int, int]
     ) -> List[Detection]:
 
         original_width, original_height = original_size
@@ -196,7 +181,7 @@ class YoloDetector:
                     class_id=class_id,
                     class_name=self._class_names[class_id],
                     confidence=confidence,
-                    box=(left, top, width, height)
+                    box=(left, top, width, height),
                 )
             )
 

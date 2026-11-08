@@ -6,7 +6,6 @@ import numpy as np
 
 
 class Capture:
-
     def __init__(self, source: int | str = 0) -> None:
         self._cap = cv2.VideoCapture()
         self._source = source

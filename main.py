@@ -31,7 +31,8 @@ USAGE = (
 # Local Bina Core endpoint for snapshot event notifications.
 BINA_CORE_URL = "http://127.0.0.1:8080/snapshot"
 
-def _parse_float(text: str,minimum: float,maximum: float) -> Optional[float]:
+
+def _parse_float(text: str, minimum: float, maximum: float) -> Optional[float]:
 
     if text is None or text == "":
         return None
@@ -50,7 +51,7 @@ def _parse_float(text: str,minimum: float,maximum: float) -> Optional[float]:
     return value
 
 
-def _parse_int(text: str,minimum: int,maximum: int) -> Optional[int]:
+def _parse_int(text: str, minimum: int, maximum: int) -> Optional[int]:
 
     if text is None or text == "":
         return None
@@ -66,11 +67,21 @@ def _parse_int(text: str,minimum: int,maximum: int) -> Optional[int]:
     return value
 
 
-_PERSON_OR_ANIMAL_CLASSES = frozenset({
-    "person",
-    "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe",
-})
+_PERSON_OR_ANIMAL_CLASSES = frozenset(
+    {
+        "person",
+        "bird",
+        "cat",
+        "dog",
+        "horse",
+        "sheep",
+        "cow",
+        "elephant",
+        "bear",
+        "zebra",
+        "giraffe",
+    }
+)
 
 
 def _is_person_or_animal(class_name: str) -> bool:
@@ -84,21 +95,16 @@ def _make_snapshot_timestamp() -> str:
 def _build_snapshot_path(directory: str) -> str:
     timestamp = _make_snapshot_timestamp()
 
-    path = os.path.join(
-        directory,
-        f"detect_{timestamp}.jpg"
-    )
+    path = os.path.join(directory, f"detect_{timestamp}.jpg")
 
     counter = 1
 
     while os.path.exists(path):
-        path = os.path.join(
-            directory,
-            f"detect_{timestamp}_{counter}.jpg"
-        )
+        path = os.path.join(directory, f"detect_{timestamp}_{counter}.jpg")
         counter += 1
 
     return path
+
 
 def send_snapshot_event(snapshot_path: str) -> bool:
     """Notify Bina Core that a snapshot has been successfully saved.
@@ -111,7 +117,7 @@ def send_snapshot_event(snapshot_path: str) -> bool:
     payload = {
         "event": "snapshot_saved",
         "image_path": os.path.abspath(snapshot_path),
-        "timestamp": _make_snapshot_timestamp()
+        "timestamp": _make_snapshot_timestamp(),
     }
 
     data = json.dumps(payload).encode("utf-8")
@@ -120,7 +126,7 @@ def send_snapshot_event(snapshot_path: str) -> bool:
         BINA_CORE_URL,
         data=data,
         headers={"Content-Type": "application/json"},
-        method="POST"
+        method="POST",
     )
 
     try:
@@ -132,7 +138,10 @@ def send_snapshot_event(snapshot_path: str) -> bool:
         print(f"Failed to notify Rust: {e}", file=sys.stderr)
         return False
 
-def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection]) -> str | None:
+
+def _save_snapshot(
+    directory: str, frame: np.ndarray, detections: List[Detection]
+) -> str | None:
     """Save an annotated frame and return its path on success.
 
     Returns None if the snapshot cannot be written.
@@ -141,21 +150,12 @@ def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection])
     annotated = frame.copy()
 
     for d in detections:
-
-        cv2.rectangle(
-            annotated,
-            d.box,
-            (0, 255, 0),
-            2
-        )
+        cv2.rectangle(annotated, d.box, (0, 255, 0), 2)
 
         label = f"{d.class_name} {d.confidence:.2f}"
 
         (text_width, text_height), _baseline = cv2.getTextSize(
-            label,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            2
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
         )
 
         label_x = d.box[0]
@@ -171,16 +171,13 @@ def _save_snapshot(directory: str,frame: np.ndarray,detections: List[Detection])
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             (0, 255, 0),
-            2
+            2,
         )
 
     path = _build_snapshot_path(directory)
 
     if not cv2.imwrite(path, annotated):
-        print(
-            f"Failed to write snapshot: {path}",
-            file=sys.stderr
-        )
+        print(f"Failed to write snapshot: {path}", file=sys.stderr)
         return None
 
     print(f"Snapshot saved: {path}")
@@ -203,7 +200,7 @@ def main(argv: List[str]) -> int:
             return 1
 
         source = args[index + 1]
-        del args[index:index + 2]
+        del args[index : index + 2]
 
     positional = [a for a in args if a != "--no-show"]
 
@@ -222,7 +219,7 @@ def main(argv: List[str]) -> int:
         if value is None:
             print(
                 f"Invalid pixelThreshold (expected 1..255): {positional[0]}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             return 1
 
@@ -234,7 +231,7 @@ def main(argv: List[str]) -> int:
         if value is None:
             print(
                 f"Invalid minChangedRatio (expected 0..1): {positional[1]}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             return 1
 
@@ -246,7 +243,7 @@ def main(argv: List[str]) -> int:
         if value is None:
             print(
                 f"Invalid confidenceThreshold (expected 0..1): {positional[2]}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             return 1
 
@@ -258,7 +255,7 @@ def main(argv: List[str]) -> int:
         if value is None:
             print(
                 f"Invalid yoloInterval (expected 1..1000): {positional[3]}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             return 1
 
@@ -270,7 +267,7 @@ def main(argv: List[str]) -> int:
         if value is None:
             print(
                 f"Invalid cameraIndex (expected 0..10): {positional[4]}",
-                file=sys.stderr
+                file=sys.stderr,
             )
             return 1
 
@@ -282,10 +279,7 @@ def main(argv: List[str]) -> int:
         os.makedirs(snapshot_dir, exist_ok=True)
 
     except OSError as e:
-        print(
-            f"Failed to create snapshots directory: {e}",
-            file=sys.stderr
-        )
+        print(f"Failed to create snapshots directory: {e}", file=sys.stderr)
         return 1
 
     motion_detector = MotionDetector(motion_config)
@@ -313,20 +307,15 @@ def main(argv: List[str]) -> int:
     if not camera.open():
         return 1
 
-    is_video_file = (
-        source is not None
-        and not source.lower().startswith(("rtsp://", "rtsps://"))
+    is_video_file = source is not None and not source.lower().startswith(
+        ("rtsp://", "rtsps://")
     )
 
     if is_video_file:
-
         fps = camera._cap.get(cv2.CAP_PROP_FPS)
 
         if not math.isfinite(fps) or fps <= 0:
-            print(
-                "Could not determine video FPS. Using 30 FPS.",
-                file=sys.stderr
-            )
+            print("Could not determine video FPS. Using 30 FPS.", file=sys.stderr)
             fps = 30.0
 
         frame_delay = 1.0 / fps
@@ -336,7 +325,7 @@ def main(argv: List[str]) -> int:
         print(f"Video FPS: {fps:.2f}")
 
     # Dedicated worker pools keep YOLO inference and HTTP notifications
-        # from blocking the main camera-processing loop.
+    # from blocking the main camera-processing loop.
     executor = ThreadPoolExecutor(max_workers=1)
     event_executor = ThreadPoolExecutor(max_workers=1)
 
@@ -348,20 +337,15 @@ def main(argv: List[str]) -> int:
 
     snapshot_cooldown = 5.0
 
-    last_snapshot_time = (
-        time.monotonic() - snapshot_cooldown
-    )
+    last_snapshot_time = time.monotonic() - snapshot_cooldown
 
     ok = True
 
-    try:    
-
+    try:
         while True:
-
             frame = camera.read()
 
             if frame is None or frame.size == 0:
-
                 if is_video_file:
                     print("Video playback completed.")
                     break
@@ -369,11 +353,10 @@ def main(argv: List[str]) -> int:
                 consecutive_failures += 1
 
                 if consecutive_failures >= max_consecutive_failures:
-
                     print(
                         f"Stream lost after {consecutive_failures} "
                         "consecutive failed reads.",
-                        file=sys.stderr
+                        file=sys.stderr,
                     )
 
                     ok = False
@@ -385,22 +368,16 @@ def main(argv: List[str]) -> int:
             consecutive_failures = 0
 
             if yolo_future is not None and yolo_future.done():
-
                 try:
                     detections = yolo_future.result()
 
                 except Exception as e:
-
-                    print(
-                        f"YOLO inference failed: {e}",
-                        file=sys.stderr
-                    )
+                    print(f"YOLO inference failed: {e}", file=sys.stderr)
 
                     detections = []
 
                 person_or_animal_present = any(
-                    _is_person_or_animal(d.class_name)
-                    for d in detections
+                    _is_person_or_animal(d.class_name) for d in detections
                 )
 
                 current_time = time.monotonic()
@@ -410,25 +387,18 @@ def main(argv: List[str]) -> int:
                     and person_or_animal_present
                     and current_time - last_snapshot_time >= snapshot_cooldown
                 ):
-
                     # Save the annotated frame and notify Bina Core only after
                     # the snapshot has been successfully written.
                     snapshot_path = _save_snapshot(
-                        snapshot_dir,
-                        pending_yolo_frame,
-                        detections
+                        snapshot_dir, pending_yolo_frame, detections
                     )
 
                     if snapshot_path is not None:
-
                         last_snapshot_time = current_time
 
                         # Dispatch the HTTP notification asynchronously so network
                         # latency does not interrupt camera processing.
-                        event_executor.submit(
-                            send_snapshot_event,
-                            snapshot_path
-                        )
+                        event_executor.submit(send_snapshot_event, snapshot_path)
 
                 yolo_future = None
                 pending_yolo_frame = None
@@ -436,57 +406,32 @@ def main(argv: List[str]) -> int:
             motion = motion_detector.detect(frame)
 
             if motion:
-
                 frame_counter += 1
 
-                if (
-                    frame_counter >= yolo_interval
-                    and yolo_future is None
-                ):
-
+                if frame_counter >= yolo_interval and yolo_future is None:
                     frame_counter = 0
 
                     yolo_frame = frame.copy()
 
                     try:
-
                         pending_yolo_frame = yolo_frame
 
-                        yolo_future = executor.submit(
-                            yolo_detector.detect,
-                            yolo_frame
-                        )
+                        yolo_future = executor.submit(yolo_detector.detect, yolo_frame)
 
                     except Exception as e:
-
-                        print(
-                            f"Failed to launch async YOLO: {e}",
-                            file=sys.stderr
-                        )
+                        print(f"Failed to launch async YOLO: {e}", file=sys.stderr)
 
                         yolo_future = None
                         pending_yolo_frame = None
 
-            text_color = (
-                (0, 0, 255) if motion else (0, 255, 0)
-            )
+            text_color = (0, 0, 255) if motion else (0, 255, 0)
 
-            ratio_text = (
-                f"Ratio: {motion_detector.get_last_ratio():.4f}"
-            )
+            ratio_text = f"Ratio: {motion_detector.get_last_ratio():.4f}"
 
-            text = (
-                "Motion: TRUE" if motion else "Motion: FALSE"
-            )
+            text = "Motion: TRUE" if motion else "Motion: FALSE"
 
             cv2.putText(
-                frame,
-                text,
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                text_color,
-                2
+                frame, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2
             )
 
             cv2.putText(
@@ -496,12 +441,11 @@ def main(argv: List[str]) -> int:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
                 text_color,
-                2
+                2,
             )
 
             threshold_text = (
-                f"Threshold: "
-                f"{motion_detector.get_config().min_changed_ratio:.4f}"
+                f"Threshold: {motion_detector.get_config().min_changed_ratio:.4f}"
             )
 
             cv2.putText(
@@ -511,12 +455,10 @@ def main(argv: List[str]) -> int:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
                 text_color,
-                2
+                2,
             )
 
-            conf_text = (
-                f"Conf: {yolo_detector.get_confidence_threshold():.2f}"
-            )
+            conf_text = f"Conf: {yolo_detector.get_confidence_threshold():.2f}"
 
             cv2.putText(
                 frame,
@@ -525,23 +467,16 @@ def main(argv: List[str]) -> int:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
                 text_color,
-                2
+                2,
             )
 
             cam_text = f"Cam: {camera_index}"
 
             cv2.putText(
-                frame,
-                cam_text,
-                (20, 180),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                text_color,
-                2
+                frame, cam_text, (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2
             )
 
             if show:
-
                 cv2.imshow(window_name, frame)
 
                 if not window_initialized:
@@ -551,9 +486,7 @@ def main(argv: List[str]) -> int:
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
 
-       
             if is_video_file:
-
                 next_frame_time += frame_delay
 
                 now = time.monotonic()
@@ -561,23 +494,15 @@ def main(argv: List[str]) -> int:
                 if now < next_frame_time:
                     time.sleep(next_frame_time - now)
                 else:
-                  
                     next_frame_time = now
 
-
     finally:
-
         if yolo_future is not None:
-
             try:
                 yolo_future.result()
 
             except Exception as e:
-
-                print(
-                    f"YOLO inference failed at shutdown: {e}",
-                    file=sys.stderr
-                )
+                print(f"YOLO inference failed at shutdown: {e}", file=sys.stderr)
 
         executor.shutdown(wait=True)
         event_executor.shutdown(wait=True)
@@ -591,7 +516,6 @@ def main(argv: List[str]) -> int:
 
 
 if __name__ == "__main__":
-
     try:
         sys.exit(main(sys.argv[1:]))
 

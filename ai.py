@@ -34,8 +34,6 @@ if not OPENAI_API_KEY and AI_PROVIDER == "openai":
     raise ValueError("OPENAI_API_KEY is not configured.")
 
 
-
-
 class AnalyzeEventRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,13 +48,13 @@ class AnalyzeEventRequest(BaseModel):
     local_time: Optional[str] = Field(
         default=None,
         max_length=64,
-        description='Local time of the event, e.g. "2026-10-28 02:14".'
+        description='Local time of the event, e.g. "2026-10-28 02:14".',
     )
 
     camera_name: Optional[str] = Field(
         default=None,
         max_length=64,
-        description='Human-readable camera name, e.g. "front door".'
+        description='Human-readable camera name, e.g. "front door".',
     )
 
 
@@ -64,9 +62,7 @@ class EventAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(
-        description="Short title, at most 10 words.",
-        min_length=1,
-        max_length=80
+        description="Short title, at most 10 words.", min_length=1, max_length=80
     )
 
     description: str = Field(
@@ -75,7 +71,7 @@ class EventAnalysis(BaseModel):
             "Only what is visible in the image."
         ),
         min_length=1,
-        max_length=500
+        max_length=500,
     )
 
     severity: Literal["low", "medium", "high"] = Field(
@@ -99,23 +95,18 @@ class AnalyzeEventResponse(BaseModel):
     analysis: EventAnalysis
 
 
-
-
 def create_model():
 
     if AI_PROVIDER == "openai":
-
         return ChatOpenAI(
             model=AI_MODEL,
             api_key=OPENAI_API_KEY,
             temperature=0,
             timeout=AI_TIMEOUT_SECONDS,
-            max_retries=1
+            max_retries=1,
         )
 
-    raise ValueError(
-        f"Unsupported AI provider: {AI_PROVIDER}"
-    )
+    raise ValueError(f"Unsupported AI provider: {AI_PROVIDER}")
 
 
 SYSTEM_PROMPT = """
@@ -167,8 +158,6 @@ Output:
 """
 
 
-
-
 class InvalidImageError(ValueError):
     """The caller sent a bad image path, type or size (a client error)."""
 
@@ -177,7 +166,7 @@ ALLOWED_IMAGE_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
-    ".webp": "image/webp"
+    ".webp": "image/webp",
 }
 
 
@@ -188,7 +177,6 @@ def load_image(relative_path: str) -> str:
     try:
         image_path = (root / relative_path).resolve()
     except (ValueError, OSError):
-        
         raise InvalidImageError("Invalid image path.")
 
     if not image_path.is_relative_to(root):
@@ -214,7 +202,6 @@ def load_image(relative_path: str) -> str:
     return f"data:{content_type};base64,{encoded_image}"
 
 
-
 def build_user_text(event: AnalyzeEventRequest) -> str:
 
     lines = [
@@ -235,52 +222,34 @@ def build_user_text(event: AnalyzeEventRequest) -> str:
 
 
 class EventAnalyzer:
-
     def __init__(self):
 
         model = create_model()
 
-        self.model = model.with_structured_output(
-            EventAnalysis,
-            method="json_schema"
-        )
+        self.model = model.with_structured_output(EventAnalysis, method="json_schema")
 
     async def analyze(self, event: AnalyzeEventRequest) -> EventAnalysis:
 
-       
         image_data = await asyncio.to_thread(load_image, event.image_path)
 
         user_message = HumanMessage(
             content=[
-                {
-                    "type": "text",
-                    "text": build_user_text(event)
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_data
-                    }
-                }
+                {"type": "text", "text": build_user_text(event)},
+                {"type": "image_url", "image_url": {"url": image_data}},
             ]
         )
 
         result = await self.model.ainvoke(
-            [
-                SystemMessage(content=SYSTEM_PROMPT),
-                user_message
-            ]
+            [SystemMessage(content=SYSTEM_PROMPT), user_message]
         )
 
         return result
 
 
-
-
 app = FastAPI(
     title="Bina AI Service",
     description="AI-powered visual event analysis.",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 analyzer = EventAnalyzer()
@@ -289,58 +258,30 @@ analyzer = EventAnalyzer()
 @app.get("/health")
 async def health_check():
 
-    return {
-        "status": "ok",
-        "service": "bina-ai"
-    }
+    return {"status": "ok", "service": "bina-ai"}
 
 
 @app.post("/api/v1/analyze", response_model=AnalyzeEventResponse)
 async def analyze_event(request: AnalyzeEventRequest):
 
     try:
-
         result = await analyzer.analyze(request)
 
-        return AnalyzeEventResponse(
-            event_id=request.event_id,
-            analysis=result
-        )
+        return AnalyzeEventResponse(event_id=request.event_id, analysis=result)
 
     except FileNotFoundError:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Image not found."
-        )
+        raise HTTPException(status_code=404, detail="Image not found.")
 
     except InvalidImageError as error:
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(error)
-        )
+        raise HTTPException(status_code=400, detail=str(error))
 
     except Exception:
+        logger.exception("AI analysis failed for event %s", request.event_id)
 
-        
-        logger.exception(
-            "AI analysis failed for event %s",
-            request.event_id
-        )
-
-        raise HTTPException(
-            status_code=502,
-            detail="AI analysis failed."
-        )
+        raise HTTPException(status_code=502, detail="AI analysis failed.")
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "ai:app",
-        host="127.0.0.1",
-        port=8001,
-        reload=True
-    )
+    uvicorn.run("ai:app", host="127.0.0.1", port=8001, reload=True)

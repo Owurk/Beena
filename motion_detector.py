@@ -7,14 +7,12 @@ import numpy as np
 
 @dataclass
 class MotionConfig:
-
     pixel_threshold: int = 25
     min_changed_ratio: float = 0.002
     required_consecutive_frames: int = 2
 
 
 class MotionDetector:
-
     def __init__(self, cfg: MotionConfig) -> None:
         self._cfg = cfg
         self._prev_gray: Optional[np.ndarray] = None
@@ -22,15 +20,14 @@ class MotionDetector:
         self._motion_streak = 0
 
     def get_last_ratio(self) -> float:
-        
+
         return self._last_ratio
 
     def detect(self, frame: Optional[np.ndarray]) -> bool:
         """Process one frame and report sustained motion."""
-        if frame is None or frame.size == 0: 
+        if frame is None or frame.size == 0:
             self._motion_streak = 0
             return False
-
 
         if frame.ndim == 2:
             current_gray = frame.copy()
@@ -42,18 +39,15 @@ class MotionDetector:
 
         current_gray = cv2.GaussianBlur(current_gray, (5, 5), 0)
 
-
         if self._prev_gray is None:
             self._prev_gray = current_gray.copy()
             return False
-
 
         if current_gray.shape[:2] != self._prev_gray.shape[:2]:
             self._motion_streak = 0
             self._prev_gray = current_gray.copy()
             return False
 
-      
         diff = cv2.absdiff(current_gray, self._prev_gray)
 
         _, thresholded = cv2.threshold(
