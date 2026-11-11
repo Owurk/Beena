@@ -18,7 +18,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("bina.ai")
+logger = logging.getLogger("beena.ai")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -110,7 +110,7 @@ def create_model():
 
 
 SYSTEM_PROMPT = """
-You are the visual event analysis system of Bina, a smart home security camera.
+You are the visual event analysis system of Beena, a smart home security camera.
 
 Each request contains one snapshot that was captured because the camera's
 detector found a person or an animal. The message also gives the detected class
@@ -247,7 +247,7 @@ class EventAnalyzer:
 
 
 app = FastAPI(
-    title="Bina AI Service",
+    title="Beena AI Service",
     description="AI-powered visual event analysis.",
     version="0.1.0",
 )
@@ -258,7 +258,7 @@ analyzer = EventAnalyzer()
 @app.get("/health")
 async def health_check():
 
-    return {"status": "ok", "service": "bina-ai"}
+    return {"status": "ok", "service": "Beena-ai"}
 
 
 @app.post("/api/v1/analyze", response_model=AnalyzeEventResponse)

@@ -30,8 +30,8 @@ USAGE = (
     "  --no-show           : run headless\n"
 )
 
-# Local Bina Core endpoint for snapshot event notifications.
-BINA_CORE_URL = "http://127.0.0.1:8080/snapshot"
+# Local Beena Core endpoint for snapshot event notifications.
+BEENA_CORE_URL = "http://127.0.0.1:8080/snapshot"
 
 
 
@@ -120,7 +120,7 @@ def _build_snapshot_path(directory: str) -> str:
 
 
 def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_name: str,timestamp: str,shared_storage_root : str) -> bool:
-    """Notify Bina Core that a snapshot has been successfully saved.
+    """Notify Beena Core that a snapshot has been successfully saved.
 
     Sends the snapshot's absolute file path and event metadata
     to the local HTTP server. Returns True if the server accepts
@@ -152,7 +152,7 @@ def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_na
     data = json.dumps(payload).encode("utf-8")
 
     request = urllib.request.Request(
-        BINA_CORE_URL,
+        BEENA_CORE_URL,
         data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -424,7 +424,7 @@ def main(argv: List[str]) -> int:
                     and person_or_animal_present
                     and current_time - last_snapshot_time >= snapshot_cooldown
                 ):
-                    # Save the annotated frame and notify Bina Core only after
+                    # Save the annotated frame and notify Beena Core only after
                     # the snapshot has been successfully written.
                     snapshot_path = _save_snapshot(
                         snapshot_dir, pending_yolo_frame, detections
