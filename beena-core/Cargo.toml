@@ -3,9 +3,20 @@ name = "beena-core"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "beena-telegram"
+path = "src/bin/telegram.rs"
+
+[[bin]]
+name = "beena-server"
+path = "src/bin/server.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 axum = "0.8.9"
+dotenvy = "0.15.7"
 reqwest = { version = "0.13.5", features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+teloxide = "0.17.0"
 tokio = { version = "1.54.1", features = ["full"] }
