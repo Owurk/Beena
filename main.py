@@ -159,7 +159,7 @@ def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_na
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=2) as response:
+        with urllib.request.urlopen(request, timeout=150) as response:
             print(f"Rust notification status: {response.status}")
             return response.status == 202
 
