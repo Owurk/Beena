@@ -142,7 +142,6 @@ def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_na
 
     payload = {
         "event_id": str(uuid4()),
-        "event": "snapshot_saved",
         "image_path": os.path.relpath(snapshot_path,shared_storage_root).replace("\\", "/"),
         "timestamp": timestamp,
         "detected_class": primary_detection.class_name,
