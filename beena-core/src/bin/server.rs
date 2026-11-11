@@ -10,7 +10,9 @@ use reqwest::Client;
 
 use dotenvy;
 use serde::{Deserialize, Serialize};
-use teloxide::{prelude::*, types::ChatId};
+use std::path::{Component, Path, PathBuf};
+use teloxide::prelude::*;
+use teloxide::types::{ChatId, InputFile};
 use tokio::fs;
 
 const CONFIG_PATH: &str = "telegram.json";
@@ -48,6 +50,7 @@ struct EventAnalysisResponse {
 struct AppState {
     client: Client,
     bot: Bot,
+    shared_storage_root: PathBuf,
 }
 
 #[tokio::main]
@@ -59,9 +62,14 @@ async fn main() {
         .build()
         .unwrap();
 
+    let shared_storage_root = PathBuf::from(
+        std::env::var("SHARED_STORAGE_ROOT").expect("SHARED_STORAGE_ROOT is not configured"),
+    );
+
     let state = AppState {
         client,
         bot: Bot::from_env(),
+        shared_storage_root,
     };
 
     let app = Router::new()
@@ -140,15 +148,36 @@ async fn handle_snapshot(
         analysis.event_id,
     );
 
-    if let Err(error) = state.bot.send_message(ChatId(chat_id), message).await {
-        println!("Failed to send Telegram message: {error:#}");
+    let relative_path = Path::new(&payload.image_path);
+
+    if relative_path.is_absolute()
+        || relative_path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        println!("Invalid image path: {}", payload.image_path);
+
+        return (StatusCode::BAD_REQUEST, "Invalid image path.".to_string()).into_response();
+    }
+
+    let image_path = state.shared_storage_root.join(relative_path);
+
+    if let Err(error) = state
+        .bot
+        .send_photo(ChatId(chat_id), InputFile::file(&image_path))
+        .caption(message)
+        .await
+    {
+        println!("Failed to send Telegram photo: {error:#}");
 
         return (
             StatusCode::BAD_GATEWAY,
-            "Failed to send Telegram message.".to_string(),
+            "Failed to send Telegram notification.".to_string(),
         )
             .into_response();
     }
+
+    println!("Telegram photo sent successfully.");
 
     StatusCode::ACCEPTED.into_response()
 }
