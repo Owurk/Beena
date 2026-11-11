@@ -54,8 +54,13 @@ struct AppState {
 async fn main() {
     dotenvy::dotenv().ok();
 
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap();
+
     let state = AppState {
-        client: Client::new(),
+        client,
         bot: Bot::from_env(),
     };
 
@@ -82,9 +87,15 @@ async fn handle_snapshot(
     println!("confidence: {}", payload.confidence);
     println!("camera_name: {}", payload.camera_name);
 
+    println!("Checking Telegram configuration...");
+
     let chat_id = match get_chat_id().await {
-        Ok(Some(chat_id)) => chat_id,
+        Ok(Some(chat_id)) => {
+            println!("Telegram chat_id loaded: {chat_id}");
+            chat_id
+        }
         Ok(None) => {
+            println!("Telegram configuration not found.");
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Telegram bot has not been configured.".to_string(),
@@ -93,7 +104,6 @@ async fn handle_snapshot(
         }
         Err(error) => {
             println!("Failed to read Telegram configuration: {error:#}");
-
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to read Telegram configuration.".to_string(),
@@ -102,14 +112,20 @@ async fn handle_snapshot(
         }
     };
 
+    println!("Starting AI analysis...");
+
     let analysis = match analyze_event(&state.client, &payload).await {
-        Ok(analysis) => analysis,
+        Ok(analysis) => {
+            println!("AI analysis completed.");
+            analysis
+        }
         Err(error) => {
             println!("AI analysis failed: {error:#}");
-
             return (StatusCode::BAD_GATEWAY, "AI analysis failed.".to_string()).into_response();
         }
     };
+
+    println!("Sending analysis through Telegram...");
 
     let message = format!(
         "🚨 {}\n\n\
@@ -141,15 +157,22 @@ async fn analyze_event(
     client: &Client,
     payload: &SnapshotEvent,
 ) -> anyhow::Result<EventAnalysisResponse> {
+    println!("Sending request to AI service...");
+
     let response = client
         .post("http://127.0.0.1:8001/api/v1/analyze")
         .json(payload)
         .send()
-        .await?
+        .await?;
+
+    println!("AI service returned status: {}", response.status());
+
+    let response = response
         .error_for_status()?
         .json::<EventAnalysisResponse>()
         .await?;
 
+    println!("AI analysis completed.");
     println!("Event ID: {}", response.event_id);
     println!("Title: {}", response.analysis.title);
     println!("Description: {}", response.analysis.description);
@@ -160,13 +183,18 @@ async fn analyze_event(
 }
 
 async fn get_chat_id() -> anyhow::Result<Option<i64>> {
+    println!("Reading Telegram config from: {}", CONFIG_PATH);
+
     let content = match fs::read_to_string(CONFIG_PATH).await {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            println!("Telegram config file not found.");
             return Ok(None);
         }
         Err(error) => return Err(error.into()),
     };
+
+    println!("Telegram config content: {content}");
 
     let config: TelegramConfig = serde_json::from_str(&content)?;
 
