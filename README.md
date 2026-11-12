@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/OpenCV-4.10-5C3EE8?logo=opencv&logoColor=white" alt="OpenCV"/>
   <img src="https://img.shields.io/badge/YOLO26-ONNX%20Runtime-FF6F00" alt="YOLO26"/>
   <img src="https://img.shields.io/badge/FastAPI-0.1.0-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/LangChain-GPT--4o--mini-1C3C3C?logo=langchain&logoColor=white" alt="LangChain"/>
+  <img src="https://img.shields.io/badge/LangChain-GPT--6--luna-1C3C3C?logo=langchain&logoColor=white" alt="LangChain"/>
   <img src="https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white" alt="Telegram"/>
 </p>
 
@@ -55,7 +55,7 @@ flowchart LR
     end
     S -- "POST /api/v1/analyze · port 8001" --> Z
     subgraph Z["🧠 ai.py — FastAPI · LangChain"]
-        F["GPT-4o-mini Vision<br/>title · description<br/>severity · unusual?"]
+        F["GPT-6-luna Vision<br/>title · description<br/>severity · unusual?"]
     end
     Z -- "JSON response" --> S
     S -- "photo + analysis caption" --> T["📨 Telegram alert"]
@@ -139,13 +139,13 @@ The preview window shows the live status: `Motion: TRUE/FALSE`, the changed-pixe
 | `--source FILE` | — | play a video file instead of the webcam, e.g. `walking.mp4` |
 | `--no-show` | — | run without the preview window |
 
-## ⚙️ Configuration (`.env`)
+##  Configuration (`.env`)
 
 ```env
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=...            # optional — for OpenAI-compatible services
 AI_PROVIDER=openai
-AI_MODEL=gpt-4o-mini
+AI_MODEL=gpt-6-luna
 AI_TIMEOUT_SECONDS=30
 SHARED_STORAGE_ROOT=./shared
 MAX_IMAGE_SIZE_MB=10
@@ -157,7 +157,7 @@ TELOXIDE_TOKEN=123456:ABC-...  # bot token from BotFather — required by both R
 | `OPENAI_API_KEY` | — | `ai.py` | vision model API key — required |
 | `OPENAI_BASE_URL` | — | `ai.py` | OpenAI-compatible service URL — optional |
 | `AI_PROVIDER` | `openai` | `ai.py` | only `openai` is supported for now |
-| `AI_MODEL` | `gpt-4o-mini` | `ai.py` | image analysis model |
+| `AI_MODEL` | `gpt-6-luna` | `ai.py` | image analysis model |
 | `AI_TIMEOUT_SECONDS` | `30` | `ai.py` | timeout for each analysis request |
 | `SHARED_STORAGE_ROOT` | `./shared` | `ai.py` and both Rust binaries | root of the shared snapshots space |
 | `MAX_IMAGE_SIZE_MB` | `10` | `ai.py` | size cap for images sent to analysis |
