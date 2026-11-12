@@ -90,7 +90,7 @@ flowchart LR
 ### Installation
 
 ```bash
-git clone <REPO_URL>        # your repository URL
+git clone https://github.com/Owurk/Beena.git     # your repository URL
 cd beena
 
 # Python dependencies
