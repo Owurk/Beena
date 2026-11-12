@@ -5,7 +5,7 @@
 <h1 align="center">🐝 Beena</h1>
 
 <p align="center">
-  <b>چشمِ بیدارِ خانه‌ی شما</b> · دیده‌بان هوشمند و متن‌باز · نسخه‌ی ۱.۰
+  <b>The Watchful Eye of Your Home</b> · Smart, open-source home guardian · v1.0
 </p>
 
 <p align="center">
@@ -19,179 +19,157 @@
   <img src="https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white" alt="Telegram"/>
 </p>
 
-<div dir="rtl">
+**Beena** watches your camera feed — but not like a dumb recorder. Like a guard that understands. It senses motion, takes only **people and animals** seriously, captures a snapshot of the moment that matters, analyzes the scene with AI, and sends the result straight to your **Telegram** along with the photo itself.
 
----
+Everything runs **on your own machine**: motion and object detection are fully local, and only the snapshot of that specific moment goes to a vision-language model to produce a short description.
 
-**Beena** به تصویر دوربین شما نگاه می‌کند؛ اما مثل یک ضبط‌کننده‌ی ساده نه — مثل یک نگهبانِ فهمیده. حرکت را حس می‌کند، فقط **انسان و حیوان** را جدی می‌گیرد، از لحظه‌ی مهم یک عکس می‌گیرد، صحنه را با هوش مصنوعی تحلیل می‌کند و نتیجه را همراه با همان عکس، مستقیم در **تلگرام** شما می‌فرستد.
+## ✨ Beena at a Glance
 
-همه‌چیز **روی دستگاه خودتان** اجرا می‌شود: تشخیص حرکت و تشخیص شیء کاملاً محلی است و تنها عکسِ همان لحظه‌ی خاص، برای تولید یک توضیح کوتاه به مدل بینایی زبانی می‌رود.
-
-## ✨ Beena در یک نگاه
-
-- 🎯 **تشخیص حرکت هوشمند** — تفاضل فریم‌ها با محوشازی گاوسی و مورفولوژی ریاضی؛ لرزش دوربین و تغییر جزئی نور را با حرکت واقعی اشتباه نمی‌گیرد.
-- 🧠 **بینایی ماشین محلی** — مدل **YOLO26** روی ONNX Runtime و CPU؛ از ۸۰ کلاس COCO فقط ۱۱ کلاسِ مهم برای امنیت خانه اهمیت دارد: `person`، `bird`، `cat`، `dog`، `horse`، `sheep`، `cow`، `elephant`، `bear`، `zebra`، `giraffe`.
-- 🤖 **تحلیل هوش مصنوعی صحنه** — برای هر رویداد یک **عنوان کوتاه، توضیح ۱ تا ۳ جمله‌ای، سطح شدت** (low / medium / high) و برچسب **غیرعادی بودن** تولید می‌شود.
-- 📸 **اسنپ‌شات هوشمند** — فقط وقتی انسان یا حیوانی واقعاً در قاب است؛ با کادر سبز و برچسب کلاس روی تصویر، و **فاصله‌ی هوشمند ۵ ثانیه‌ای** بین رویدادها.
-- 📨 **اعلان فوری تلگرام** — عکس + تحلیل، با یک ربات سبک مبتنی بر teloxide؛ تنظیمش فقط یک `/start` است.
-- 🔒 **محافظت‌شده و اخلاق‌مدار** — بدون شناسایی افراد، بدون قضاوت نیت، با اعتبارسنجی سخت‌گیرانه‌ی مسیر تصویر و جلوگیری از دسترسی خارج از پوشه.
+- 🎯 **Smart motion detection** — frame differencing with Gaussian blur and mathematical morphology; camera shake and subtle lighting changes are not mistaken for real movement.
+- 🧠 **Local machine vision** — a **YOLO26** model on ONNX Runtime and CPU; of COCO's 80 classes, only the 11 that matter for home security: `person`, `bird`, `cat`, `dog`, `horse`, `sheep`, `cow`, `elephant`, `bear`, `zebra`, `giraffe`.
+- 🤖 **AI scene analysis** — for every event it produces a **short title, a 1–3 sentence description, a severity level** (low / medium / high) and an **unusual** flag.
+- 📸 **Smart snapshots** — only when a person or animal is really in the frame; green boxes with class labels drawn on the image, and a **5-second cooldown** between events.
+- 📨 **Instant Telegram alerts** — photo + analysis through a lightweight teloxide bot; setting it up is a single `/start`.
+- 🔒 **Privacy-first and ethics-aware** — no identification of people, no intent judgment, strict image-path validation, and no reads outside the shared folder.
 
 <p align="center">
-  <img src="assets/detection-demo.jpg" alt="خروجی واقعی Beena" width="720"/>
+  <img src="assets/detection-demo.jpg" alt="Real Beena output" width="720"/>
   <br/>
-  <sub>خروجی واقعی نسخه‌ی ۱.۰ — تشخیص <code>person</code> با اطمینان ۰٫۹۴ روی ویدیوی آزمایشی و تحلیل خودکار همان قاب</sub>
+  <sub>Real output of v1.0 — a <code>person</code> detected at 0.94 confidence on the test video, with automatic analysis of the same frame</sub>
 </p>
 
-## 🏗 معماری
+## 🏗 Architecture
 
-Beena از **چهار فرآیند مستقل** ساخته شده که از طریق HTTP و فضای دیسک مشترک با هم حرف می‌زنند؛ هر کدام را می‌توان جدا نگه داشت، ری‌استارت کرد یا بعداً جای دیگری اجرا کرد.
-
-<div dir="ltr">
+Beena is built from **four independent processes** that talk to each other over HTTP and a shared disk space; each one can be kept separate, restarted, or later moved to another machine.
 
 ```mermaid
 flowchart LR
-    subgraph V["🐍 main.py — پایپ‌لاین بینایی"]
-        A["وبکم یا فایل ویدیویی<br/>--source"] --> B["تشخیص حرکت<br/>OpenCV"]
-        B -- "حرکت پایدار" --> C["YOLO26 · ONNX<br/>11 کلاس انسان و حیوان"]
-        C -- "تشخیص معتبر" --> D["اسنپ‌شات + کادر سبز<br/>shared/snapshots"]
+    subgraph V["🐍 main.py — Vision Pipeline"]
+        A["Webcam or video file<br/>--source"] --> B["Motion detection<br/>OpenCV"]
+        B -- "sustained motion" --> C["YOLO26 · ONNX<br/>11 person & animal classes"]
+        C -- "valid detection" --> D["Snapshot + green boxes<br/>shared/snapshots"]
     end
-    D -- "POST /snapshot · پورت 8080" --> S
+    D -- "POST /snapshot · port 8080" --> S
     subgraph S["🦀 beena-server — Axum"]
-        E["اعتبارسنجی رویداد<br/>و مسیر تصویر"]
+        E["Event & image path<br/>validation"]
     end
-    S -- "POST /api/v1/analyze · پورت 8001" --> Z
+    S -- "POST /api/v1/analyze · port 8001" --> Z
     subgraph Z["🧠 ai.py — FastAPI · LangChain"]
-        F["GPT-4o-mini Vision<br/>عنوان · توضیح · شدت · غیرعادی؟"]
+        F["GPT-4o-mini Vision<br/>title · description<br/>severity · unusual?"]
     end
-    Z -- "پاسخ JSON" --> S
-    S -- "عکس + کپشن تحلیل" --> T["📨 اعلان تلگرام"]
-    U["🤖 beena-telegram<br/>ثبت گیرنده با /start"] -. "polling" .-> T
+    Z -- "JSON response" --> S
+    S -- "photo + analysis caption" --> T["📨 Telegram alert"]
+    U["🤖 beena-telegram<br/>register receiver via /start"] -. "polling" .-> T
 ```
 
-</div>
-
-| سرویس | اجرا | تکنولوژی | آدرس | نقش |
+| Service | Run | Technology | Address | Role |
 |---|---|---|---|---|
-| **پایپ‌لاین بینایی** | `python main.py` | Python · OpenCV · ONNX Runtime | — | دوربین، حرکت، YOLO، اسنپ‌شات |
-| **سرویس هوش مصنوعی** | `python ai.py` | Python · FastAPI · LangChain | `127.0.0.1:8001` | تحلیل بصری رویداد با مدل بینایی |
-| **هسته‌ی هماهنگی** | `cargo run --bin beena-server` | Rust · Axum · Tokio | `127.0.0.1:8080` | دریافت رویداد، تحلیل، ارسال اعلان |
-| **ربات تلگرام** | `cargo run --bin beena-telegram` | Rust · teloxide | polling | ثبت گیرنده‌ی اعلان با `/start` |
+| **Vision pipeline** | `python main.py` | Python · OpenCV · ONNX Runtime | — | camera, motion, YOLO, snapshots |
+| **AI service** | `python ai.py` | Python · FastAPI · LangChain | `127.0.0.1:8001` | visual analysis of each event |
+| **Coordination core** | `cargo run --bin beena-server` | Rust · Axum · Tokio | `127.0.0.1:8080` | receive events, analyze, send alerts |
+| **Telegram bot** | `cargo run --bin beena-telegram` | Rust · teloxide | polling | register the alert receiver via `/start` |
 
-### سفر یک رویداد، در شش گام
+### The journey of an event, in six steps
 
-1. **دریافت تصویر** — قاب‌ها از وبکم زنده (بدون آرگومان) یا فایل ویدیویی با `--source` خوانده می‌شوند؛ فایل ویدیویی با FPS واقعی خودش پخش می‌شود.
-2. **تشخیص حرکت** — هر قاب خاکستری، بلور گاوسی و با فریم قبلی مقایسه می‌شود؛ مورفولوژی نویز را پاک می‌کند و حرکت فقط وقتی «واقعی» است که دست‌کم **۲ فریم پشت‌سرهم** تکرار شود.
-3. **بینایی ماشین** — بعد از هر **۱۰ فریم حرکت پایدار**، یک کپی از قاب به‌صورت **ناهم‌زمان** به YOLO26 می‌رود تا حلقه‌ی دوربین هرگز برای استنتاج توقف نکند.
-4. **اسنپ‌شات** — اگر انسان یا حیوانی با اطمینان کافی در قاب باشد، قابِ برچسب‌خورده در `shared/snapshots/` ذخیره می‌شود؛ رویدادهای پشت‌سرهم با **فاصله‌ی ۵ ثانیه‌ای** کنترل می‌شوند.
-5. **تحلیل هوش مصنوعی** — هسته‌ی Rust رویداد را به سرویس AI می‌فرستد؛ تصویر (با سقف حجمی و بررسی مسیر) به مدل بینایی می‌رسد و پاسخ با **خروجی ساخت‌یافته‌ی تضمین‌شده** (JSON Schema) برمی‌گردد.
-6. **اعلان** — هسته، عکس را همراه کپشن تحلیل به تلگرام می‌فرستد و `202 Accepted` به پایپ‌لاین برمی‌گرداند.
+1. **Frame acquisition** — frames come from the live webcam (no arguments) or a video file via `--source`; video files play at their real FPS.
+2. **Motion detection** — each frame is grayscaled, Gaussian-blurred and compared with the previous one; morphology cleans up noise, and motion only counts as "real" after at least **2 consecutive frames**.
+3. **Machine vision** — after every **10 frames of sustained motion**, a copy of the frame goes **asynchronously** to YOLO26, so the camera loop never stalls for inference.
+4. **Snapshot** — if a person or animal is present with enough confidence, the labeled frame is saved to `shared/snapshots/`; back-to-back events are rate-limited by a **5-second cooldown**.
+5. **AI analysis** — the Rust core forwards the event to the AI service; the image (with a size limit and path checks) reaches the vision model and comes back as a **guaranteed structured response** (JSON Schema).
+6. **Notification** — the core sends the photo with the analysis caption to Telegram and returns `202 Accepted` to the pipeline.
 
-## 🚀 شروع سریع
+## 🚀 Quick Start
 
-### پیش‌نیازها
+### Prerequisites
 
-- **Rust** (stable) — از طریق [rustup](https://rustup.rs)
+- **Rust** (stable) — via [rustup](https://rustup.rs)
 - **Python 3.11+**
-- یک کلید API سازگار با OpenAI (یا هر سرویس سازگار با آن)
-- یک ربات تلگرام: از [@BotFather](https://t.me/BotFather) توکن بگیرید
+- An OpenAI-compatible API key (or any compatible service)
+- A Telegram bot: get a token from [@BotFather](https://t.me/BotFather)
 
-### نصب
-
-<div dir="ltr">
+### Installation
 
 ```bash
-git clone <REPO_URL>        # لینک مخزن خودتان
+git clone <REPO_URL>        # your repository URL
 cd beena
 
-# وابستگی‌های پایتون
+# Python dependencies
 python -m venv .venv
-source .venv/bin/activate   # ویندوز: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 pip install fastapi "uvicorn[standard]" pydantic python-dotenv langchain-openai langchain-core
 
-# تنظیمات
-cp .env.example .env        # مقادیر را مطابق جدول پایین پر کنید
+# Configuration
+cp .env.example .env        # fill in the values, see the table below
 ```
 
-</div>
+> 💡 **Important:** run all commands from the **project root**; the model path (`models/yolo26n.onnx`) is resolved relative to it.
 
-> 💡 **مهم:** دستورات را از **ریشه‌ی پروژه** اجرا کنید؛ مسیر مدل (`models/yolo26n.onnx`) نسبت به همان‌جا خوانده می‌شود.
-
-### اجرا — چهار ترمینال
-
-<div dir="ltr">
+### Run — four terminals
 
 ```bash
-# ۱) سرویس هوش مصنوعی  (127.0.0.1:8001)
+# 1) AI service  (127.0.0.1:8001)
 python ai.py
 
-# ۲) هسته‌ی هماهنگی  (127.0.0.1:8080)
+# 2) Coordination core  (127.0.0.1:8080)
 cargo run --bin beena-server
 
-# ۳) ربات تلگرام
+# 3) Telegram bot
 cargo run --bin beena-telegram
-#    حالا در تلگرام به ربات خودتان بروید و /start بزنید
-#    تا chat_id شما در telegram.json ثبت شود.
+#    Now open your bot in Telegram and send /start
+#    so your chat_id is stored in telegram.json.
 
-# ۴) پایپ‌لاین بینایی
-python main.py                          # وبکم زنده
-python main.py --source walking.mp4     # فایل ویدیویی
-python main.py --source walking.mp4 --no-show   # بدون پنجره (headless)
+# 4) Vision pipeline
+python main.py                          # live webcam
+python main.py --source walking.mp4     # video file
+python main.py --source walking.mp4 --no-show   # headless
 ```
 
-</div>
+The preview window shows the live status: `Motion: TRUE/FALSE`, the changed-pixel ratio, the thresholds and the camera index. Press `q` to quit. A video file keeps playing until it ends and then exits cleanly.
 
-پنجره‌ی نمایش، وضعیت زنده را نشان می‌دهد: `Motion: TRUE/FALSE`، نسبت پیکسل‌های تغییرکرده، آستانه‌ها و شماره‌ی دوربین. برای خروج کلید `q` را بزنید. پخش فایل ویدیویی تا پایان ویدیو ادامه دارد و بعد به‌صورت تمیز تمام می‌شود.
+### `main.py` command-line parameters
 
-### پارامترهای خط فرمان `main.py`
-
-| پارامتر | پیش‌فرض | توضیح |
+| Parameter | Default | Description |
 |---|---|---|
-| `pixelThreshold` | `25` | آستانه‌ی اختلاف هر پیکسل — از ۱ تا ۲۵۵ |
-| `minChangedRatio` | `0.002` | حداقل نسبت پیکسل‌های تغییرکرده در قاب — از ۰ تا ۱ |
-| `confidenceThreshold` | `0.5` | حداقل اطمینان برای پذیرش تشخیص YOLO |
-| `yoloInterval` | `10` | هر چند فریمِ دارای حرکت، یک‌بار YOLO اجرا شود |
-| `cameraIndex` | `0` | ایندکس وبکم — از ۰ تا ۱۰ |
-| `--source FILE` | — | پخش فایل ویدیویی به‌جای وبکم، مثلا `walking.mp4` |
-| `--no-show` | — | اجرای بدون پنجره‌ی گرافیکی |
+| `pixelThreshold` | `25` | per-pixel difference threshold — 1 to 255 |
+| `minChangedRatio` | `0.002` | minimum changed-pixel ratio per frame — 0 to 1 |
+| `confidenceThreshold` | `0.5` | minimum confidence to accept a YOLO detection |
+| `yoloInterval` | `10` | run YOLO once every N frames with motion |
+| `cameraIndex` | `0` | webcam index — 0 to 10 |
+| `--source FILE` | — | play a video file instead of the webcam, e.g. `walking.mp4` |
+| `--no-show` | — | run without the preview window |
 
-## ⚙️ تنظیمات (`.env`)
-
-<div dir="ltr">
+## ⚙️ Configuration (`.env`)
 
 ```env
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=...            # اختیاری — برای سرویس‌های سازگار با OpenAI
+OPENAI_BASE_URL=...            # optional — for OpenAI-compatible services
 AI_PROVIDER=openai
 AI_MODEL=gpt-4o-mini
 AI_TIMEOUT_SECONDS=30
 SHARED_STORAGE_ROOT=./shared
 MAX_IMAGE_SIZE_MB=10
-TELOXIDE_TOKEN=123456:ABC-...  # توکن ربات از BotFather — برای هر دو باینری Rust الزامی است
+TELOXIDE_TOKEN=123456:ABC-...  # bot token from BotFather — required by both Rust binaries
 ```
 
-</div>
-
-| متغیر | پیش‌فرض | مصرف‌کننده | توضیح |
+| Variable | Default | Used by | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | — | `ai.py` | کلید API مدل بینایی — الزامی |
-| `OPENAI_BASE_URL` | — | `ai.py` | آدرس سرویس سازگار با OpenAI — اختیاری |
-| `AI_PROVIDER` | `openai` | `ai.py` | فعلاً فقط `openai` پشتیبانی می‌شود |
-| `AI_MODEL` | `gpt-4o-mini` | `ai.py` | مدل تحلیل تصویر |
-| `AI_TIMEOUT_SECONDS` | `30` | `ai.py` | مهلت پاسخ هر درخواست تحلیل |
-| `SHARED_STORAGE_ROOT` | `./shared` | `ai.py` و هر دو باینری Rust | ریشه‌ی فضای مشترک اسنپ‌شات‌ها |
-| `MAX_IMAGE_SIZE_MB` | `10` | `ai.py` | سقف حجم تصویر ورودی تحلیل |
-| `TELOXIDE_TOKEN` | — | `beena-server` و `beena-telegram` | توکن ربات تلگرام — الزامی |
+| `OPENAI_API_KEY` | — | `ai.py` | vision model API key — required |
+| `OPENAI_BASE_URL` | — | `ai.py` | OpenAI-compatible service URL — optional |
+| `AI_PROVIDER` | `openai` | `ai.py` | only `openai` is supported for now |
+| `AI_MODEL` | `gpt-4o-mini` | `ai.py` | image analysis model |
+| `AI_TIMEOUT_SECONDS` | `30` | `ai.py` | timeout for each analysis request |
+| `SHARED_STORAGE_ROOT` | `./shared` | `ai.py` and both Rust binaries | root of the shared snapshots space |
+| `MAX_IMAGE_SIZE_MB` | `10` | `ai.py` | size cap for images sent to analysis |
+| `TELOXIDE_TOKEN` | — | `beena-server` and `beena-telegram` | Telegram bot token — required |
 
-علاوه بر این‌ها، فایل **`telegram.json`** به‌صورت خودکار ساخته می‌شود: با اولین `/start`، شناسه‌ی چت شما در آن ذخیره می‌شود و Beena فقط برای **همان یک گیرنده** اعلان می‌فرستد.
+On top of these, **`telegram.json`** is created automatically: with the first `/start`, your chat ID is stored in it and Beena sends alerts to **that single receiver** only.
 
 ## 🔌 API
 
-### `POST /snapshot` — هسته‌ی هماهنگی (پورت ۸۰۸۰)
+### `POST /snapshot` — coordination core (port 8080)
 
-هر رویدادِ تأییدشده توسط `main.py` با این ساختار اطلاع داده می‌شود:
-
-<div dir="ltr">
+Every verified event reported by `main.py` uses this structure:
 
 ```json
 {
@@ -204,17 +182,13 @@ TELOXIDE_TOKEN=123456:ABC-...  # توکن ربات از BotFather — برای �
 }
 ```
 
-</div>
+- `image_path` is always **relative** to `SHARED_STORAGE_ROOT`; absolute paths or paths containing `..` are rejected with `400`.
+- If the Telegram bot is not configured yet, the response is `503`; if the AI analysis fails, `502`.
+- On success: `202 Accepted`.
 
-- `image_path` همیشه **نسبی** نسبت به `SHARED_STORAGE_ROOT` است؛ مسیر مطلق یا شامل `..` با خطای `400` رد می‌شود.
-- اگر ربات تلگرام هنوز تنظیم نشده باشد پاسخ `503` و اگر تحلیل AI شکست بخورد `502` برمی‌گردد.
-- در موفقیت: `202 Accepted`.
+### `POST /api/v1/analyze` — AI service (port 8001)
 
-### `POST /api/v1/analyze` — سرویس هوش مصنوعی (پورت ۸۰۰۱)
-
-همان payload رویداد را می‌گیرد، تصویر را از فضای مشترک می‌خواند (پسوندهای مجاز: `jpg` / `jpeg` / `png` / `webp`، حداکثر `MAX_IMAGE_SIZE_MB`) و پاسخ ساخت‌یافته برمی‌گرداند:
-
-<div dir="ltr">
+Takes the same event payload, loads the image from the shared space (allowed extensions: `jpg` / `jpeg` / `png` / `webp`, at most `MAX_IMAGE_SIZE_MB`) and returns a structured response:
 
 ```json
 {
@@ -228,82 +202,70 @@ TELOXIDE_TOKEN=123456:ABC-...  # توکن ربات از BotFather — برای �
 }
 ```
 
-</div>
+Errors: `404` image not found · `400` invalid image · `502` analysis failed.
 
-خطاها: `404` تصویر پیدا نشد · `400` تصویر نامعتبر · `502` شکست تحلیل.
-
-### `GET /health` — بررسی سلامت سرویس AI
-
-<div dir="ltr">
+### `GET /health` — AI service health check
 
 ```json
 { "status": "ok", "service": "Beena-ai" }
 ```
 
-</div>
-
-## 📁 ساختار پروژه
-
-<div dir="ltr">
+## 📁 Project structure
 
 ```
 .
-├── main.py                  # حلقه‌ی اصلی بینایی: حرکت ← YOLO ← اسنپ‌شات ← اعلان
-├── ai.py                    # سرویس تحلیل هوش مصنوعی (FastAPI · 127.0.0.1:8001)
-├── capture.py               # لایه‌ی دسترسی به منبع تصویر (وبکم / فایل ویدیویی)
-├── motion_detector.py       # تشخیص حرکت: گاوسی + تفاضل فریم + مورفولوژی
-├── yolo_detector.py         # YOLO26 روی ONNX Runtime (CPU) + فیلتر کلاس‌ها
+├── main.py                  # main vision loop: motion → YOLO → snapshot → alert
+├── ai.py                    # AI analysis service (FastAPI · 127.0.0.1:8001)
+├── capture.py               # video source access layer (webcam / video file)
+├── motion_detector.py       # motion detection: Gaussian + frame diff + morphology
+├── yolo_detector.py         # YOLO26 on ONNX Runtime (CPU) + class filtering
 ├── requirements.txt
 ├── .env.example
 ├── models/
-│   ├── yolo26n.onnx         # مدل تشخیص شیء (640×640، CPUExecutionProvider)
-│   └── coco.names           # نام ۸۰ کلاس COCO؛ ۱۱ کلاس انسان/حیوان استفاده می‌شود
+│   ├── yolo26n.onnx         # object detection model (640×640, CPUExecutionProvider)
+│   └── coco.names           # the 80 COCO class names; 11 person/animal classes are used
 └── beena-core/
     ├── Cargo.toml
     └── src/bin/
-        ├── server.rs        # beena-server — هسته‌ی هماهنگی (Axum · 127.0.0.1:8080)
-        └── telegram.rs      # beena-telegram — ثبت گیرنده‌ی اعلان (teloxide)
+        ├── server.rs        # beena-server — coordination core (Axum · 127.0.0.1:8080)
+        └── telegram.rs      # beena-telegram — alert receiver registration (teloxide)
 ```
 
-</div>
+## 🔒 Privacy & design principles
 
-## 🔒 حریم خصوصی و اصول طراحی
+These principles are not just slogans; they are written directly into the system prompt and the code:
 
-این اصول فقط شعار نیستند؛ مستقیم در پرامپت سیستم و کد نوشته شده‌اند:
+- **Describe behavior, never judge intent** — the analysis never calls anyone a thief or an intruder; a person's mere presence is not suspicious.
+- **No identification of people** — age, gender, ethnicity or other personal traits are never guessed; clothing and visible actions are fine.
+- **Cautious by default** — when unsure, it picks the lower severity and sets `is_unusual: false`.
+- **Trust the image, not the label** — the green boxes are just detector output; if the image disagrees with the detector's claim, the scene is described as it really is.
+- **Immune to in-image instructions** — text visible inside the scene is never followed as an instruction.
+- **Minimal data** — motion and object detection are fully local; only the snapshot of that event is used to analyze that event.
+- **Path validation** — neither the Rust core nor the AI service will read an image from outside the shared folder.
+- **Single receiver** — only the first user who sends `/start` receives notifications.
 
-- **توصیف رفتار، نه قضاوت نیت** — تحلیل هرگز کسی را «سارق» یا «مهاجم» نام نمی‌کند؛ حضور یک نفر به‌خودی‌خود مشکوک نیست.
-- **بدون شناسایی افراد** — سن، جنسیت، قومیت یا هر ویژگی شخصی حدس زده نمی‌شود؛ لباس و رفتار قابل‌توصیف است.
-- **محتاط به‌صورت پیش‌فرض** — در شرایط نامطمئن، سطح شدت پایین‌تر و `is_unusual: false` انتخاب می‌شود.
-- **اعتماد به تصویر، نه به برچسب** — کادرهای سبز فقط خروجی تشخیص‌دهنده‌اند؛ اگر تصویر خلاف ادعای مدل باشد، همان توصیف می‌شود.
-- **مقاوم در برابر دستور داخل تصویر** — متنی که داخل صحنه دیده می‌شود، هرگز به‌عنوان دستور اجرا نمی‌شود.
-- **حداقل داده** — تشخیص حرکت و شیء کاملاً محلی است و فقط عکسِ همان رویداد، برای تحلیل همان رویداد استفاده می‌شود.
-- **اعتبارسنجی مسیر** — هم هسته‌ی Rust و هم سرویس AI اجازه‌ی خواندن تصویر از خارج از فضای مشترک را نمی‌دهند.
-- **تک‌گیرنده** — فقط اولین کاربری که `/start` می‌زند اعلان‌ها را دریافت می‌کند.
+## 🗺 Roadmap
 
-## 🗺 نقشه‌ی راه
+- [ ] **RTSP** network camera support (not available in v1.0 — webcam and video files only for now)
+- [ ] Multiple simultaneous cameras
+- [ ] Receiver management through the bot itself (multi-user)
+- [ ] Event storage and search
+- [ ] One-command deployment with Docker
 
-- [ ] اتصال به دوربین‌های شبکه با **RTSP** (در نسخه‌ی ۱.۰ هنوز موجود نیست — فعلاً وبکم و فایل ویدیویی)
-- [ ] پشتیبانی از چند دوربین به‌صورت هم‌زمان
-- [ ] مدیریت گیرنده‌ها از طریق خود ربات تلگرام (چند کاربر)
-- [ ] ذخیره‌سازی و جست‌وجوی رویدادها
-- [ ] کانتینری‌سازی با Docker برای استقرار تک‌فرمانی
+## 🛠 Troubleshooting
 
-## 🛠 عیب‌یابی سریع
-
-| مشکل | علت محتمل و راه‌حل |
+| Problem | Likely cause and fix |
 |---|---|
-| `Could not open video source!` | وبکم توسط برنامه‌ی دیگری اشغال است یا ایندکس اشتباه است؛ ایندکس را به‌عنوان پنجمین آرگومان تغییر دهید (مثلاً `python main.py 25 0.002 0.5 10 1`). |
-| `Failed to load ONNX model` | از ریشه‌ی پروژه اجرا نکرده‌اید؛ مسیر `models/` نسبی است. |
-| `OPENAI_API_KEY is not configured.` | فایل `.env` کنار `ai.py` را با کلید معتبر بسازید. |
-| پیام تلگرام نمی‌رسد | به ربات `/start` نداده‌اید (`telegram.json` وجود ندارد) یا توکن `TELOXIDE_TOKEN` اشتباه است. |
-| پاسخ `503` در ارسال رویداد | ربات تلگرام هنوز پیکربندی نشده — `/start` را بزنید و دوباره تلاش کنید. |
-| ویدیو سریع‌تر از واقعیت پخش می‌شود | طبیعی نیست؛ `main.py` سرعت پخش را با FPS فایل هماهنگ می‌کند — اگر FPS فایل صفر بود، به‌صورت خودکار ۳۰ در نظر گرفته می‌شود. |
+| `Could not open video source!` | The webcam is used by another program or the index is wrong; change the index as the fifth argument (e.g. `python main.py 25 0.002 0.5 10 1`). |
+| `Failed to load ONNX model` | You are not running from the project root; the `models/` path is relative. |
+| `OPENAI_API_KEY is not configured.` | Create the `.env` file next to `ai.py` with a valid key. |
+| Telegram message never arrives | You have not sent `/start` to the bot (`telegram.json` missing) or `TELOXIDE_TOKEN` is wrong. |
+| `503` response when sending an event | The Telegram bot is not configured yet — send `/start` and try again. |
+| Video plays faster than reality | It shouldn't; `main.py` paces playback to the file's FPS — if the file's FPS is zero, 30 is used automatically. |
 
 ---
 
 <p align="center">
-  ساخته‌شده با ☕ و علاقه ·
+  Built with ☕ and love ·
   <a href="https://github.com/jackyJa">GitHub</a>
 </p>
-
-</div>
