@@ -23,14 +23,14 @@
 
 Everything runs **on your own machine**: motion and object detection are fully local, and only the snapshot of that specific moment goes to a vision-language model to produce a short description.
 
-## ✨ Beena at a Glance
+##  Beena at a Glance
 
-- 🎯 **Smart motion detection** — frame differencing with Gaussian blur and mathematical morphology; camera shake and subtle lighting changes are not mistaken for real movement.
-- 🧠 **Local machine vision** — a **YOLO26** model on ONNX Runtime and CPU; of COCO's 80 classes, only the 11 that matter for home security: `person`, `bird`, `cat`, `dog`, `horse`, `sheep`, `cow`, `elephant`, `bear`, `zebra`, `giraffe`.
-- 🤖 **AI scene analysis** — for every event it produces a **short title, a 1–3 sentence description, a severity level** (low / medium / high) and an **unusual** flag.
-- 📸 **Smart snapshots** — only when a person or animal is really in the frame; green boxes with class labels drawn on the image, and a **5-second cooldown** between events.
-- 📨 **Instant Telegram alerts** — photo + analysis through a lightweight teloxide bot; setting it up is a single `/start`.
-- 🔒 **Privacy-first and ethics-aware** — no identification of people, no intent judgment, strict image-path validation, and no reads outside the shared folder.
+-  **Smart motion detection** — frame differencing with Gaussian blur and mathematical morphology; camera shake and subtle lighting changes are not mistaken for real movement.
+-  **Local machine vision** — a **YOLO26** model on ONNX Runtime and CPU; of COCO's 80 classes, only the 11 that matter for home security: `person`, `bird`, `cat`, `dog`, `horse`, `sheep`, `cow`, `elephant`, `bear`, `zebra`, `giraffe`.
+-  **AI scene analysis** — for every event it produces a **short title, a 1–3 sentence description, a severity level** (low / medium / high) and an **unusual** flag.
+-  **Smart snapshots** — only when a person or animal is really in the frame; green boxes with class labels drawn on the image, and a **5-second cooldown** between events.
+-  **Instant Telegram alerts** — photo + analysis through a lightweight teloxide bot; setting it up is a single `/start`.
+-  **Privacy-first and ethics-aware** — no identification of people, no intent judgment, strict image-path validation, and no reads outside the shared folder.
 
 <p align="center">
   <img src="assets/detection-demo.jpg" alt="Real Beena output" width="720"/>
@@ -38,7 +38,7 @@ Everything runs **on your own machine**: motion and object detection are fully l
   <sub>Real output of v1.0 — a <code>person</code> detected at 0.94 confidence on the test video, with automatic analysis of the same frame</sub>
 </p>
 
-## 🏗 Architecture
+##  Architecture
 
 Beena is built from **four independent processes** that talk to each other over HTTP and a shared disk space; each one can be kept separate, restarted, or later moved to another machine.
 
@@ -78,7 +78,7 @@ flowchart LR
 5. **AI analysis** — the Rust core forwards the event to the AI service; the image (with a size limit and path checks) reaches the vision model and comes back as a **guaranteed structured response** (JSON Schema).
 6. **Notification** — the core sends the photo with the analysis caption to Telegram and returns `202 Accepted` to the pipeline.
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
@@ -103,7 +103,7 @@ pip install fastapi "uvicorn[standard]" pydantic python-dotenv langchain-openai 
 cp .env.example .env        # fill in the values, see the table below
 ```
 
-> 💡 **Important:** run all commands from the **project root**; the model path (`models/yolo26n.onnx`) is resolved relative to it.
+>  **Important:** run all commands from the **project root**; the model path (`models/yolo26n.onnx`) is resolved relative to it.
 
 ### Run — four terminals
 
@@ -165,7 +165,7 @@ TELOXIDE_TOKEN=123456:ABC-...  # bot token from BotFather — required by both R
 
 On top of these, **`telegram.json`** is created automatically: with the first `/start`, your chat ID is stored in it and Beena sends alerts to **that single receiver** only.
 
-## 🔌 API
+##  API
 
 ### `POST /snapshot` — coordination core (port 8080)
 
@@ -210,7 +210,7 @@ Errors: `404` image not found · `400` invalid image · `502` analysis failed.
 { "status": "ok", "service": "Beena-ai" }
 ```
 
-## 📁 Project structure
+##  Project structure
 
 ```
 .
@@ -231,7 +231,7 @@ Errors: `404` image not found · `400` invalid image · `502` analysis failed.
         └── telegram.rs      # beena-telegram — alert receiver registration (teloxide)
 ```
 
-## 🔒 Privacy & design principles
+##  Privacy & design principles
 
 These principles are not just slogans; they are written directly into the system prompt and the code:
 
@@ -244,7 +244,7 @@ These principles are not just slogans; they are written directly into the system
 - **Path validation** — neither the Rust core nor the AI service will read an image from outside the shared folder.
 - **Single receiver** — only the first user who sends `/start` receives notifications.
 
-## 🗺 Roadmap
+##  Roadmap
 
 - [ ] **RTSP** network camera support (not available in v1.0 — webcam and video files only for now)
 - [ ] Multiple simultaneous cameras
@@ -252,7 +252,7 @@ These principles are not just slogans; they are written directly into the system
 - [ ] Event storage and search
 - [ ] One-command deployment with Docker
 
-## 🛠 Troubleshooting
+##  Troubleshooting
 
 | Problem | Likely cause and fix |
 |---|---|
@@ -267,5 +267,5 @@ These principles are not just slogans; they are written directly into the system
 
 <p align="center">
   Built with ☕ and love ·
-  <a href="https://github.com/jackyJa">GitHub</a>
+  <a href="https://github.com/Owurk/Beena">GitHub</a>
 </p>
