@@ -23,7 +23,7 @@ logger = logging.getLogger("beena.ai")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai")
-AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
+AI_MODEL = os.getenv("AI_MODEL", "gpt-6-luna")
 AI_TIMEOUT_SECONDS = float(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 
 SHARED_STORAGE_ROOT = Path(os.getenv("SHARED_STORAGE_ROOT", "./shared")).resolve()
