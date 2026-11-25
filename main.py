@@ -1,83 +1,52 @@
+import argparse
+import json
 import math
 import os
 import sys
 import time
-import json
 import urllib.request
+
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import List, Optional
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 
 import cv2
 import numpy as np
 
-from capture import Capture
+from dotenv import load_dotenv
+
+from camera.camera_manager import CameraManager
+from camera.frame import Frame
+from camera.frame_synchronizer import FrameSynchronizer
+
+from config.loader import load_config
+from config.credentials import get_camera_credentials
+from config.url_builder import build_rtsp_url
+
 from motion_detector import MotionConfig, MotionDetector
 from yolo_detector import Detection, YoloConfig, YoloDetector
 
 
-USAGE = (
-    "Usage: main.py [pixelThreshold] [minChangedRatio] "
-    "[confidenceThreshold] [yoloInterval] [cameraIndex] "
-    "[--source VIDEO_OR_RTSP_URL] [--no-show]\n"
-    "  pixelThreshold      : 1..255  (default 25)\n"
-    "  minChangedRatio     : 0..1    (default 0.002)\n"
-    "  confidenceThreshold : 0..1    (default 0.5)\n"
-    "  yoloInterval        : 1..1000 (default 10)\n"
-    "  cameraIndex         : 0..10   (default 0)\n"
-    "  --source            : video file or RTSP URL\n"
-    "  --no-show           : run headless\n"
+load_dotenv(
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "config",
+        ".env"
+    )
 )
 
-# Local Beena Core endpoint for snapshot event notifications.
+
+
+
 BEENA_CORE_URL = "http://127.0.0.1:8080/snapshot"
 
+SNAPSHOT_COOLDOWN = 5.0
 
+# Maximum allowed time difference between Main and Sub frames.
+FRAME_SYNC_MAX_DELTA = 0.1
 
-def get_camera_name(source) -> str:
-    if source is None:
-        return "Webcam"
-
-    return os.path.basename(source)
-
-
-def _parse_float(text: str, minimum: float, maximum: float) -> Optional[float]:
-
-    if text is None or text == "":
-        return None
-
-    try:
-        value = float(text)
-    except ValueError:
-        return None
-
-    if not math.isfinite(value):
-        return None
-
-    if value < minimum or value > maximum:
-        return None
-
-    return value
-
-
-def _parse_int(text: str, minimum: int, maximum: int) -> Optional[int]:
-
-    if text is None or text == "":
-        return None
-
-    try:
-        value = int(text, 10)
-    except ValueError:
-        return None
-
-    if value < minimum or value > maximum:
-        return None
-
-    return value
-
-
-_PERSON_OR_ANIMAL_CLASSES = frozenset(
+PERSON_OR_ANIMAL_CLASSES = frozenset(
     {
         "person",
         "bird",
@@ -94,104 +63,209 @@ _PERSON_OR_ANIMAL_CLASSES = frozenset(
 )
 
 
+
+
+
+def load_camera_manager() -> tuple[CameraManager, str]:
+    """
+    Load the single configured camera and create its manager.
+    """
+
+    config = load_config("config/cameras.yaml")
+
+    if len(config.cameras) != 1:
+        raise ValueError(
+            "Beena 2.0 requires exactly one configured camera."
+        )
+
+    camera = config.cameras[0]
+
+    credentials = get_camera_credentials(camera.id)
+
+    main_url = build_rtsp_url(
+        camera.connection.main_stream,
+        credentials
+    )
+
+    sub_url = build_rtsp_url(
+        camera.connection.sub_stream,
+        credentials
+    )
+
+    manager = CameraManager(
+        config=camera,
+        main_stream_url=main_url,
+        sub_stream_url=sub_url
+    )
+
+    return manager, camera.name
+
+
+
+
+
+def _parse_float(text: str,minimum: float,maximum: float) -> float:
+
+    value = float(text)
+
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(
+            "Value must be finite."
+        )
+
+    if not minimum <= value <= maximum:
+        raise argparse.ArgumentTypeError(
+            f"Value must be between {minimum} and {maximum}."
+        )
+
+    return value
+
+
+def _parse_positive_int(text: str) -> int:
+
+    value = int(text)
+
+    if value <= 0:
+        raise argparse.ArgumentTypeError(
+            "Value must be a positive integer."
+        )
+
+    return value
+
+
 def _is_person_or_animal(class_name: str) -> bool:
-    return class_name in _PERSON_OR_ANIMAL_CLASSES
+
+    return class_name in PERSON_OR_ANIMAL_CLASSES
 
 
 def _make_snapshot_timestamp() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+    return datetime.now().astimezone().isoformat(
+        timespec="seconds"
+    )
 
 
 def _build_snapshot_path(directory: str) -> str:
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    path = os.path.join(directory, f"detect_{timestamp}.jpg")
+    path = os.path.join(
+        directory,
+        f"detect_{timestamp}.jpg"
+    )
 
     counter = 1
 
     while os.path.exists(path):
+
         path = os.path.join(
             directory,
             f"detect_{timestamp}_{counter}.jpg"
         )
+
         counter += 1
 
     return path
 
 
-def send_snapshot_event(snapshot_path: str,detections: List[Detection],camera_name: str,timestamp: str,shared_storage_root : str) -> bool:
-    """Notify Beena Core that a snapshot has been successfully saved.
 
-    Sends the snapshot's absolute file path and event metadata
-    to the local HTTP server. Returns True if the server accepts
-    the event, otherwise False.
+
+def _scale_detections(detections: list[Detection],source_frame: np.ndarray,target_frame: np.ndarray) -> list[Detection]:
+    """
+    Transform bounding boxes from Sub resolution
+    to Main resolution.
     """
 
-    valid_detections = [
-        d for d in detections
-        if _is_person_or_animal(d.class_name)
-    ]
+    source_height, source_width = source_frame.shape[:2]
+    target_height, target_width = target_frame.shape[:2]
 
-    if not valid_detections:
-        return False
+    scale_x = target_width / source_width
+    scale_y = target_height / source_height
 
-    primary_detection = max(
-        valid_detections,
-        key=lambda d: d.confidence
-    )
+    scaled = []
 
-    payload = {
-        "event_id": str(uuid4()),
-        "image_path": os.path.relpath(snapshot_path,shared_storage_root).replace("\\", "/"),
-        "local_time": timestamp,
-        "detected_class": primary_detection.class_name,
-        "confidence": float(primary_detection.confidence),
-        "camera_name": camera_name,
-    }
+    for detection in detections:
 
-    data = json.dumps(payload).encode("utf-8")
+        x, y, width, height = detection.box
 
-    request = urllib.request.Request(
-        BEENA_CORE_URL,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+        left = round(x * scale_x)
+        top = round(y * scale_y)
 
-    try:
-        with urllib.request.urlopen(request, timeout=150) as response:
-            print(f"Rust notification status: {response.status}")
-            return response.status == 202
+        right = round((x + width) * scale_x)
+        bottom = round((y + height) * scale_y)
 
-    except Exception as e:
-        print(f"Failed to notify Rust: {e}", file=sys.stderr)
-        return False
+        left = max(0, min(left, target_width - 1))
+        top = max(0, min(top, target_height - 1))
+
+        right = max(0, min(right, target_width - 1))
+        bottom = max(0, min(bottom, target_height - 1))
+
+        scaled_width = right - left
+        scaled_height = bottom - top
+
+        if scaled_width <= 0 or scaled_height <= 0:
+            continue
+
+        scaled.append(
+            Detection(
+                class_id=detection.class_id,
+                class_name=detection.class_name,
+                confidence=detection.confidence,
+                box=(
+                    left,
+                    top,
+                    scaled_width,
+                    scaled_height
+                )
+            )
+        )
+
+    return scaled
 
 
-def _save_snapshot(
-    directory: str, frame: np.ndarray, detections: List[Detection]
-) -> str | None:
-    """Save an annotated frame and return its path on success.
 
-    Returns None if the snapshot cannot be written.
+
+def _save_snapshot(directory: str,frame: np.ndarray,detections: list[Detection]) -> Optional[str]:
+    """
+    Save an annotated frame.
+
+    Detection.box uses (x, y, width, height).
     """
 
     annotated = frame.copy()
 
-    for d in detections:
-        cv2.rectangle(annotated, d.box, (0, 255, 0), 2)
+    for detection in detections:
 
-        label = f"{d.class_name} {d.confidence:.2f}"
+        x, y, width, height = detection.box
 
-        (text_width, text_height), _baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+        top_left = (x, y)
+        bottom_right = (x + width, y + height)
+
+        cv2.rectangle(
+            annotated,
+            top_left,
+            bottom_right,
+            (0, 255, 0),
+            2
         )
 
-        label_x = d.box[0]
-        label_y = d.box[1] - 10
+        label = (
+            f"{detection.class_name} "
+            f"{detection.confidence:.2f}"
+        )
+
+        (text_width, text_height), _ = cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            2
+        )
+
+        label_x = x
+        label_y = y - 10
 
         if label_y < text_height:
-            label_y = d.box[3] + text_height + 5
+            label_y = y + text_height + 5
 
         cv2.putText(
             annotated,
@@ -200,13 +274,18 @@ def _save_snapshot(
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
             (0, 255, 0),
-            2,
+            2
         )
 
     path = _build_snapshot_path(directory)
 
     if not cv2.imwrite(path, annotated):
-        print(f"Failed to write snapshot: {path}", file=sys.stderr)
+
+        print(
+            f"Failed to write snapshot: {path}",
+            file=sys.stderr
+        )
+
         return None
 
     print(f"Snapshot saved: {path}")
@@ -214,356 +293,603 @@ def _save_snapshot(
     return path
 
 
-def main(argv: List[str]) -> int:
 
-    show = "--no-show" not in argv
 
-    args = argv.copy()
-    source = None
+def send_snapshot_event(snapshot_path: str,detections: list[Detection],camera_name: str,timestamp: str,shared_storage_root: str) -> bool:
+    """
+    Notify Beena Core about a saved snapshot.
+    """
 
-    if "--source" in args:
-        index = args.index("--source")
+    valid_detections = [
+        detection
+        for detection in detections
+        if _is_person_or_animal(detection.class_name)
+    ]
 
-        if index + 1 >= len(args):
-            print("--source requires a video path or RTSP URL", file=sys.stderr)
-            return 1
+    if not valid_detections:
+        return False
 
-        source = args[index + 1]
-        del args[index : index + 2]
+    primary_detection = max(
+        valid_detections,
+        key=lambda detection: detection.confidence
+    )
 
-    positional = [a for a in args if a != "--no-show"]
+    payload = {
+        "event_id": str(uuid4()),
 
-    motion_config = MotionConfig()
-    yolo_config = YoloConfig()
+        "image_path": os.path.relpath(
+            snapshot_path,
+            shared_storage_root
+        ).replace("\\", "/"),
 
-    yolo_interval = 10
-    camera_index = 0
+        "local_time": timestamp,
 
-    if len(positional) == 0:
-        print(USAGE, end="")
+        "detected_class": primary_detection.class_name,
 
-    if len(positional) > 0:
-        value = _parse_int(positional[0], 1, 255)
+        "confidence": float(
+            primary_detection.confidence
+        ),
 
-        if value is None:
+        "camera_name": camera_name,
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        BEENA_CORE_URL,
+        data=data,
+        headers={
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    try:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=150
+        ) as response:
+
             print(
-                f"Invalid pixelThreshold (expected 1..255): {positional[0]}",
-                file=sys.stderr,
+                f"Rust notification status: {response.status}"
             )
-            return 1
 
-        motion_config.pixel_threshold = value
+            return response.status == 202
 
-    if len(positional) > 1:
-        value = _parse_float(positional[1], 0.0, 1.0)
+    except Exception as exc:
 
-        if value is None:
-            print(
-                f"Invalid minChangedRatio (expected 0..1): {positional[1]}",
-                file=sys.stderr,
-            )
-            return 1
+        print(
+            f"Failed to notify Rust: {exc}",
+            file=sys.stderr
+        )
 
-        motion_config.min_changed_ratio = value
+        return False
 
-    if len(positional) > 2:
-        value = _parse_float(positional[2], 0.0, 1.0)
 
-        if value is None:
-            print(
-                f"Invalid confidenceThreshold (expected 0..1): {positional[2]}",
-                file=sys.stderr,
-            )
-            return 1
 
-        yolo_config.confidence_threshold = value
+def _handle_yolo_result(future: Future,pending_frame: Frame,frame_synchronizer: FrameSynchronizer,snapshot_dir: str,camera_name: str,shared_storage_root: str,event_executor: ThreadPoolExecutor,last_snapshot_time: float) -> float:
+    """
+    Process a completed YOLO inference.
 
-    if len(positional) > 3:
-        value = _parse_int(positional[3], 1, 1000)
+    The exact Sub Frame submitted to YOLO is used for synchronization.
+    """
 
-        if value is None:
-            print(
-                f"Invalid yoloInterval (expected 1..1000): {positional[3]}",
-                file=sys.stderr,
-            )
-            return 1
+    try:
 
-        yolo_interval = value
+        detections = future.result()
 
-    if len(positional) > 4:
-        value = _parse_int(positional[4], 0, 10)
+    except Exception as exc:
 
-        if value is None:
-            print(
-                f"Invalid cameraIndex (expected 0..10): {positional[4]}",
-                file=sys.stderr,
-            )
-            return 1
+        print(
+            f"YOLO inference failed: {exc}",
+            file=sys.stderr
+        )
 
-        camera_index = value
+        return last_snapshot_time
 
-    # Determine the camera/source name for event metadata.
-    camera_name = get_camera_name(source) if source is not None else "Webcam"
+    valid_detections = [
+        detection
+        for detection in detections
+        if _is_person_or_animal(detection.class_name)
+    ]
 
-    SHARED_STORAGE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)),"shared")
+    if not valid_detections:
+        return last_snapshot_time
+
+    current_time = time.monotonic()
+
+    if current_time - last_snapshot_time < SNAPSHOT_COOLDOWN:
+        return last_snapshot_time
+
+    sync_result = frame_synchronizer.process(pending_frame)
+
+    if sync_result.main_frame is not None:
+
+        snapshot_frame = sync_result.main_frame.image
+
+        snapshot_detections = _scale_detections(
+            valid_detections,
+            pending_frame.image,
+            snapshot_frame
+        )
+
+        print(
+            f"Using synchronized Main frame "
+            f"(delta: {sync_result.time_delta:.4f}s)"
+        )
+
+    else:
+
+        snapshot_frame = pending_frame.image
+
+        snapshot_detections = valid_detections
+
+        print(
+            "Main frame synchronization unavailable. "
+            "Using Sub frame."
+        )
+
+    if not snapshot_detections:
+        return last_snapshot_time
+
+    snapshot_path = _save_snapshot(
+        snapshot_dir,
+        snapshot_frame,
+        snapshot_detections
+    )
+
+    if snapshot_path is None:
+        return last_snapshot_time
+
+    event_timestamp = _make_snapshot_timestamp()
+
+    event_executor.submit(
+        send_snapshot_event,
+        snapshot_path,
+        snapshot_detections,
+        camera_name,
+        event_timestamp,
+        shared_storage_root
+    )
+
+    return current_time
+
+
+
+
+def main(argv: list[str]) -> int:
+
+    parser = argparse.ArgumentParser(
+        description="Beena local-first smart security camera."
+    )
+
+    parser.add_argument(
+        "min_changed_ratio",
+        nargs="?",
+        type=lambda value: _parse_float(
+            value, 0.0, 1.0
+        ),
+        default=0.002
+    )
+
+    parser.add_argument(
+        "confidence_threshold",
+        nargs="?",
+        type=lambda value: _parse_float(
+            value, 0.0, 1.0
+        ),
+        default=0.5
+    )
+
+    parser.add_argument(
+        "yolo_interval",
+        nargs="?",
+        type=_parse_positive_int,
+        default=10
+    )
+
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Run without a preview window."
+    )
+
+    args = parser.parse_args(argv)
+
+
+
+    motion_config = MotionConfig(
+        min_changed_ratio=args.min_changed_ratio
+    )
+
+    yolo_config = YoloConfig(
+        confidence_threshold=args.confidence_threshold
+    )
+
+
+
+    project_root = os.path.dirname(
+        os.path.abspath(__file__)
+    )
+
+    shared_storage_root = os.path.join(
+        project_root,
+        "shared"
+    )
 
     snapshot_dir = os.path.join(
-        SHARED_STORAGE_ROOT,
+        shared_storage_root,
         "snapshots"
     )
 
     try:
-        os.makedirs(snapshot_dir, exist_ok=True)
 
-    except OSError as e:
-        print(f"Failed to create snapshots directory: {e}", file=sys.stderr)
+        os.makedirs(
+            snapshot_dir,
+            exist_ok=True
+        )
+
+    except OSError as exc:
+
+        print(
+            f"Failed to create snapshots directory: {exc}",
+            file=sys.stderr
+        )
+
         return 1
 
-    motion_detector = MotionDetector(motion_config)
 
-    yolo_detector = YoloDetector(yolo_config)
+
+    try:
+
+        camera_manager, camera_name = load_camera_manager()
+
+    except Exception as exc:
+
+        print(
+            f"Camera configuration failed: {exc}",
+            file=sys.stderr
+        )
+
+        return 1
+
+
+
+    motion_detector = MotionDetector(
+        motion_config
+    )
+
+    yolo_detector = YoloDetector(
+        yolo_config
+    )
 
     if not yolo_detector.load():
         return 1
 
-    window_name = "Webcam"
-
-    window_initialized = False
-
-    if show:
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-
-    max_consecutive_failures = 5
-    retry_delay = 0.030
-
-    if source is not None:
-        camera = Capture(source)
-    else:
-        camera = Capture(camera_index)
-
-    if not camera.open():
-        return 1
-
-    is_video_file = source is not None and not source.lower().startswith(
-        ("rtsp://", "rtsps://")
+    frame_synchronizer = FrameSynchronizer(
+        camera_manager,
+        FRAME_SYNC_MAX_DELTA
     )
 
-    if is_video_file:
-        fps = camera._cap.get(cv2.CAP_PROP_FPS)
 
-        if not math.isfinite(fps) or fps <= 0:
-            print("Could not determine video FPS. Using 30 FPS.", file=sys.stderr)
-            fps = 30.0
 
-        frame_delay = 1.0 / fps
+    yolo_executor = ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="beena-yolo"
+    )
 
-        next_frame_time = time.monotonic()
-
-        print(f"Video FPS: {fps:.2f}")
-
-    # Dedicated worker pools keep YOLO inference and HTTP notifications
-    # from blocking the main camera-processing loop.
-    executor = ThreadPoolExecutor(max_workers=1)
-    event_executor = ThreadPoolExecutor(max_workers=1)
+    event_executor = ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="beena-events"
+    )
 
     yolo_future: Optional[Future] = None
-    pending_yolo_frame: Optional[np.ndarray] = None
 
-    consecutive_failures = 0
+    pending_yolo_frame: Optional[Frame] = None
+
+
+
     frame_counter = 0
 
-    snapshot_cooldown = 5.0
+    last_processed_frame_id: Optional[int] = None
 
-    last_snapshot_time = time.monotonic() - snapshot_cooldown
+    last_snapshot_time = (
+        time.monotonic() - SNAPSHOT_COOLDOWN
+    )
+
+    show = not args.no_show
+
+    window_name = "Beena"
+
+    manager_started = False
 
     ok = True
 
     try:
+
+
+        camera_manager.start()
+
+        manager_started = True
+
+        print(f"Beena started. Camera: {camera_name}")
+
+        if show:
+
+            cv2.namedWindow(
+                window_name,
+                cv2.WINDOW_NORMAL
+            )
+
+            cv2.resizeWindow(
+                window_name,
+                1280,
+                720
+            )
+
+
+
         while True:
-            frame = camera.read()
 
-            if frame is None or frame.size == 0:
-                if is_video_file:
-                    print("Video playback completed.")
-                    break
+            try:
 
-                consecutive_failures += 1
+                sub_frame = camera_manager.get_sub_frame()
 
-                if consecutive_failures >= max_consecutive_failures:
-                    print(
-                        f"Stream lost after {consecutive_failures} "
-                        "consecutive failed reads.",
-                        file=sys.stderr,
-                    )
+            except LookupError:
 
-                    ok = False
-                    break
-
-                time.sleep(retry_delay)
+                # Sub stream has not delivered its first frame yet.
+                time.sleep(0.01)
                 continue
 
-            consecutive_failures = 0
+            # Avoid processing the same buffered frame repeatedly.
+            if sub_frame.frame_id == last_processed_frame_id:
 
-            if yolo_future is not None and yolo_future.done():
-                try:
-                    detections = yolo_future.result()
+                time.sleep(0.005)
+                continue
 
-                except Exception as e:
-                    print(f"YOLO inference failed: {e}", file=sys.stderr)
+            last_processed_frame_id = sub_frame.frame_id
 
-                    detections = []
+            frame = sub_frame.image
 
-                person_or_animal_present = any(
-                    _is_person_or_animal(d.class_name) for d in detections
+
+
+            if (
+                yolo_future is not None
+                and yolo_future.done()
+                and pending_yolo_frame is not None
+            ):
+
+                last_snapshot_time = _handle_yolo_result(
+                    yolo_future,
+                    pending_yolo_frame,
+                    frame_synchronizer,
+                    snapshot_dir,
+                    camera_name,
+                    shared_storage_root,
+                    event_executor,
+                    last_snapshot_time
                 )
-
-                current_time = time.monotonic()
-
-                if (
-                    pending_yolo_frame is not None
-                    and person_or_animal_present
-                    and current_time - last_snapshot_time >= snapshot_cooldown
-                ):
-                    # Save the annotated frame and notify Beena Core only after
-                    # the snapshot has been successfully written.
-                    snapshot_path = _save_snapshot(
-                        snapshot_dir, pending_yolo_frame, detections
-                    )
-
-                    if snapshot_path is not None:
-                        last_snapshot_time = current_time
-
-                        # Dispatch the HTTP notification asynchronously so network
-                        # latency does not interrupt camera processing.
-                        event_timestamp = _make_snapshot_timestamp()
-
-                        event_executor.submit(
-                            send_snapshot_event,
-                            snapshot_path,
-                            detections,
-                            camera_name,
-                            event_timestamp,
-                            SHARED_STORAGE_ROOT
-                        )
 
                 yolo_future = None
                 pending_yolo_frame = None
 
+
+
             motion = motion_detector.detect(frame)
 
             if motion:
+
                 frame_counter += 1
 
-                if frame_counter >= yolo_interval and yolo_future is None:
+                if (
+                    frame_counter >= args.yolo_interval
+                    and yolo_future is None
+                ):
+
                     frame_counter = 0
 
-                    yolo_frame = frame.copy()
-
                     try:
-                        pending_yolo_frame = yolo_frame
 
-                        yolo_future = executor.submit(yolo_detector.detect, yolo_frame)
+                        pending_yolo_frame = sub_frame
 
-                    except Exception as e:
-                        print(f"Failed to launch async YOLO: {e}", file=sys.stderr)
+                        yolo_future = yolo_executor.submit(
+                            yolo_detector.detect,
+                            frame.copy()
+                        )
+
+                    except Exception as exc:
+
+                        print(
+                            f"Failed to launch YOLO: {exc}",
+                            file=sys.stderr
+                        )
 
                         yolo_future = None
                         pending_yolo_frame = None
 
-            text_color = (0, 0, 255) if motion else (0, 255, 0)
+            else:
 
-            ratio_text = f"Ratio: {motion_detector.get_last_ratio():.4f}"
+                frame_counter = 0
 
-            text = "Motion: TRUE" if motion else "Motion: FALSE"
 
-            cv2.putText(
-                frame, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2
-            )
-
-            cv2.putText(
-                frame,
-                ratio_text,
-                (20, 75),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                text_color,
-                2,
-            )
-
-            threshold_text = (
-                f"Threshold: {motion_detector.get_config().min_changed_ratio:.4f}"
-            )
-
-            cv2.putText(
-                frame,
-                threshold_text,
-                (20, 110),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                text_color,
-                2,
-            )
-
-            conf_text = f"Conf: {yolo_detector.get_confidence_threshold():.2f}"
-
-            cv2.putText(
-                frame,
-                conf_text,
-                (20, 145),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                text_color,
-                2,
-            )
-
-            cam_text = f"Cam: {camera_index}"
-
-            cv2.putText(
-                frame, cam_text, (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2
-            )
 
             if show:
-                cv2.imshow(window_name, frame)
 
-                if not window_initialized:
-                    cv2.resizeWindow(window_name, 1280, 720)
-                    window_initialized = True
+                preview = frame.copy()
+
+                text_color = (
+                    (0, 0, 255)
+                    if motion
+                    else (0, 255, 0)
+                )
+
+                status_text = (
+                    "Motion: TRUE"
+                    if motion
+                    else "Motion: FALSE"
+                )
+
+                ratio_text = (
+                    f"Ratio: "
+                    f"{motion_detector.get_last_ratio():.4f}"
+                )
+
+                threshold_text = (
+                    f"Threshold: "
+                    f"{motion_config.min_changed_ratio:.4f}"
+                )
+
+                confidence_text = (
+                    f"Confidence: "
+                    f"{yolo_detector.get_confidence_threshold():.2f}"
+                )
+
+                cv2.putText(
+                    preview,
+                    status_text,
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    text_color,
+                    2
+                )
+
+                cv2.putText(
+                    preview,
+                    ratio_text,
+                    (20, 75),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    text_color,
+                    2
+                )
+
+                cv2.putText(
+                    preview,
+                    threshold_text,
+                    (20, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    text_color,
+                    2
+                )
+
+                cv2.putText(
+                    preview,
+                    confidence_text,
+                    (20, 145),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    text_color,
+                    2
+                )
+
+                cv2.imshow(
+                    window_name,
+                    preview
+                )
 
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
 
-            if is_video_file:
-                next_frame_time += frame_delay
+    except KeyboardInterrupt:
 
-                now = time.monotonic()
+        print("\nStopping Beena...")
 
-                if now < next_frame_time:
-                    time.sleep(next_frame_time - now)
-                else:
-                    next_frame_time = now
+    except Exception as exc:
+
+        print(
+            f"Vision pipeline error: {exc}",
+            file=sys.stderr
+        )
+
+        ok = False
 
     finally:
-        if yolo_future is not None:
+
+
+
+        if manager_started:
+
             try:
-                yolo_future.result()
 
-            except Exception as e:
-                print(f"YOLO inference failed at shutdown: {e}", file=sys.stderr)
+                camera_manager.stop()
 
-        executor.shutdown(wait=True)
-        event_executor.shutdown(wait=True)
+            except Exception as exc:
 
-        camera.release()
+                print(
+                    f"Camera shutdown error: {exc}",
+                    file=sys.stderr
+                )
+
+                ok = False
+
+
+
+        if yolo_future is not None:
+
+            try:
+
+                detections = yolo_future.result()
+
+                if pending_yolo_frame is not None:
+
+                    last_snapshot_time = _handle_yolo_result(
+                        _completed_future(detections),
+                        pending_yolo_frame,
+                        frame_synchronizer,
+                        snapshot_dir,
+                        camera_name,
+                        shared_storage_root,
+                        event_executor,
+                        last_snapshot_time
+                    )
+
+            except Exception as exc:
+
+                print(
+                    f"YOLO shutdown error: {exc}",
+                    file=sys.stderr
+                )
+
+
+
+        yolo_executor.shutdown(
+            wait=True
+        )
+
+        event_executor.shutdown(
+            wait=True
+        )
 
         if show:
-            cv2.destroyWindow(window_name)
+            cv2.destroyAllWindows()
+
+        print("Beena stopped.")
 
     return 0 if ok else 1
 
 
+def _completed_future(result) -> Future:
+    """
+    Create an already-completed Future for shutdown handling.
+    """
+
+    future = Future()
+    future.set_result(result)
+
+    return future
+
+
 if __name__ == "__main__":
+
     try:
-        sys.exit(main(sys.argv[1:]))
+
+        sys.exit(
+            main(sys.argv[1:])
+        )
 
     except KeyboardInterrupt:
+
         sys.exit(130)

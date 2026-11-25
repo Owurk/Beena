@@ -1,0 +1,6 @@
+cameras:
+  - id: test_camera
+    name: Beena Test Camera
+    connection:
+      main_stream: rtsp://127.0.0.1:8554/main
+      sub_stream: rtsp://127.0.0.1:8554/sub

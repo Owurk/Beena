@@ -108,4 +108,5 @@ class MotionDetector:
             detectShadows=True,
         )
 
+        self._last_ratio = 0.0
         self._motion_streak = 0
